@@ -1,0 +1,28 @@
+src/
+  app/
+    supabaseClient.js
+  store/
+    useStore.js
+  features/
+    customers/
+    invoices/
+  components/
+  utils/
+  pages/
+	Dashboard.jsx
+	Customers.jsx
+	Invoices.jsx
+
+
+UI LAYOUT
+
+[Sidebar]
+  Dashboard
+  Customers
+  Invoices
+
+[Main Content]
+  Page content
+
+
+Example: https://quickadminsoftware.com/tools/en/tools/invoice-generator/
