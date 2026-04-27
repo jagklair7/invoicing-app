@@ -17,6 +17,7 @@ import CustomerStatement from './pages/CustomerStatement.jsx'
 import { OrgProvider } from './context/OrgContext'
 import OrgSwitcher from './components/OrgSwitcher.jsx'
 import CreateOrganization from './pages/CreateOrganization.jsx'
+import Organizations from './pages/admin/Organizations.jsx'
 
 function ProtectedRoute({ session, children }) {
   if (!session) return <Navigate to="/login" replace />
@@ -83,6 +84,7 @@ export default function App() {
               <ProtectedRoute session={session}><OrgSwitcher /></ProtectedRoute>
             } />
             <Route path="/create-org" element={<CreateOrganization />} />
+            <Route path="/organizations" element={<Organizations />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />
