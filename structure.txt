@@ -24,5 +24,15 @@ UI LAYOUT
 [Main Content]
   Page content
 
+APRIL 26--------------------
 
+/src/auth/
+  ├── AuthProvider.jsx
+  ├── useAuth.js
+  ├── useOrg.js
+  ├── usePermissions.js
+  ├── permissionRules.js
+  └── index.js
+
+---------------------------------
 Example: https://quickadminsoftware.com/tools/en/tools/invoice-generator/

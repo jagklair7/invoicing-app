@@ -4,16 +4,24 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './app/supabaseClient'
 
 // Pages & Components
-import Layout from './components/Layout'
-import InvoiceForm from './pages/InvoiceForm.jsx'
-import InvoiceView from './pages/InvoiceView.jsx'
-import Customers from './pages/Customers'
-import Invoices from './pages/Invoices'
-import Login from './pages/Login.jsx'
-import Signup from './pages/Signup.jsx'
-import Settings from './pages/Settings.jsx'
-import Dashboard from './pages/Dashboard.jsx'
+import Layout        from './components/Layout'
+import InvoiceForm   from './pages/InvoiceForm.jsx'
+import InvoiceView   from './pages/InvoiceView.jsx'
+import Customers     from './pages/Customers'
+import Invoices      from './pages/Invoices'
+import Login         from './pages/Login.jsx'
+import Signup        from './pages/Signup.jsx'
+import Settings      from './pages/Settings.jsx'
+import Dashboard     from './pages/Dashboard.jsx'
 import CustomerStatement from './pages/CustomerStatement.jsx'
+import { OrgProvider } from './context/OrgContext'
+import OrgSwitcher from './components/OrgSwitcher.jsx'
+import CreateOrganization from './pages/CreateOrganization.jsx'
+
+function ProtectedRoute({ session, children }) {
+  if (!session) return <Navigate to="/login" replace />
+  return children
+}
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -31,35 +39,55 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  if (loading) return <div className="loading-screen">Loading Klair Invoicing...</div>
+  if (loading) return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', fontFamily: 'DM Sans, sans-serif',
+      fontSize: 14, color: '#94a3b8', background: '#f8fafc'
+    }}>
+      Loading…
+    </div>
+  )
 
   return (
-    <Layout>
-      <Routes>
-        {/* Public Route */}
-        <Route
-          path="/login"
-          element={!session ? <Login /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/signup"
-          element={!session ? <Signup /> : <Navigate to="/" />}
-        />
+      <OrgProvider>
+        <Layout session={session}>
+          <Routes>
+            {/* Public */}
+            <Route path="/login"  element={!session ? <Login />  : <Navigate to="/" replace />} />
+            <Route path="/signup" element={!session ? <Signup /> : <Navigate to="/" replace />} />
 
-        {/* Protected Routes */}
-        <Route path="/"               element={session ? <Dashboard />   : <Navigate to="/login" />} />
-        <Route path="/customers"      element={session ? <Customers />    : <Navigate to="/login" />} />
-        <Route path="/invoices"       element={session ? <Invoices />     : <Navigate to="/login" />} />
-        <Route path="/invoices/new"   element={session ? <InvoiceForm />  : <Navigate to="/login" />} />
-        <Route path="/invoices/:id"   element={session ? <InvoiceView />  : <Navigate to="/login" />} />
-        <Route path="/settings"       element={session ? <Settings />     : <Navigate to="/login" />} />
-        <Route
-          path="/customers/:id/statement"
-          element={session ? <CustomerStatement /> : <Navigate to="/login" />}
-        />
-        {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </Layout>
+            {/* Protected */}
+            <Route path="/" element={
+              <ProtectedRoute session={session}><Dashboard /></ProtectedRoute>
+            } />
+            <Route path="/customers" element={
+              <ProtectedRoute session={session}><Customers /></ProtectedRoute>
+            } />
+            <Route path="/invoices" element={
+              <ProtectedRoute session={session}><Invoices /></ProtectedRoute>
+            } />
+            <Route path="/invoices/new" element={
+              <ProtectedRoute session={session}><InvoiceForm /></ProtectedRoute>
+            } />
+            <Route path="/invoices/:id" element={
+              <ProtectedRoute session={session}><InvoiceView /></ProtectedRoute>
+            } />
+            <Route path="/settings" element={
+              <ProtectedRoute session={session}><Settings /></ProtectedRoute>
+            } />
+            <Route path="/customers/:id/statement" element={
+              <ProtectedRoute session={session}><CustomerStatement /></ProtectedRoute>
+            } />
+            <Route path="/org-switcher" element={
+              <ProtectedRoute session={session}><OrgSwitcher /></ProtectedRoute>
+            } />
+            <Route path="/create-org" element={<CreateOrganization />} />
+
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+    </OrgProvider>
   )
 }

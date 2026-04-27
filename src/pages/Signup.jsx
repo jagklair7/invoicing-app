@@ -4,6 +4,7 @@ import { supabase } from '../app/supabaseClient'
 import { Link } from 'react-router-dom'
 
 export default function Signup() {
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -25,7 +26,10 @@ export default function Signup() {
     }
 
     setLoading(true)
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName  // This metadata can be used by a DB trigger to auto-create an organization and link the user as an admin, for example
+        } 
+      } 
+    })
     if (error) {
       setError(error.message)
     } else {

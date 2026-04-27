@@ -43,7 +43,7 @@ export default function Invoices() {
       year: 'numeric', month: 'short', day: 'numeric'
     })
   }
-
+  
   return (
     <div>
       {/* Header */}
