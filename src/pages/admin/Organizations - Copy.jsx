@@ -256,7 +256,7 @@ const css = `
 `
 
 export default function Organizations() {
-  const { isSuperAdmin, loading: contextLoading, refresh: refreshOrgs } = useOrg()
+  const { isSuperAdmin, refresh: refreshOrgs } = useOrg()
   const navigate = useNavigate()
 
   const [orgs, setOrgs]             = useState([])
@@ -279,16 +279,9 @@ export default function Organizations() {
   const [memberError, setMemberError]     = useState({})
 
   useEffect(() => {
-    // 2. ONLY redirect if the context has FINISHED loading AND you aren't an admin
-    if (!contextLoading && !isSuperAdmin) { navigate('/'); return }
+    if (!isSuperAdmin) { navigate('/'); return }
     fetchOrgs()
-  }, [isSuperAdmin, contextLoading, navigate])
-
-    // 3. Show a spinner or nothing while the check is in progress
-    if (contextLoading) return <div className="orgs-spinner" />
-
-    // 4. If loading is done and you're still not an admin, don't render anything
-    if (!isSuperAdmin) return null
+  }, [isSuperAdmin])
 
   async function fetchOrgs() {
     setLoading(true)
