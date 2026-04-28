@@ -703,9 +703,9 @@ export default function InvoiceView() {
   //const handleInvoiceChange = (e) => {
   // setInvoice({ ...invoice, [e.target.name]: e.target.value })
   //}
-  
   const [customer, setCustomer]     = useState(null)
   const [items, setItems]           = useState([])
+  const [orgSettings, setOrgSettings] = useState(null)
   const [loading, setLoading]       = useState(true)
   const [isEditing, setIsEditing]   = useState(false)
   const [saving, setSaving]         = useState(false)
@@ -732,19 +732,26 @@ export default function InvoiceView() {
         .single()
       if (error) throw error
       if (!data) return
-///console.log('Invoice:', data)  // ← does invoice_items appear here?
 
       setInvoice(data)
       setCustomer(data.customers)
-      
-     // setItems(data.invoice_items ?? [])
+
+      // After fetching invoice, also fetch org settings
+      const { data: orgSettings } = await supabase
+        .from('organization_settings')
+        .select('gst_number, company_name, company_address, company_city, company_phone')
+        .eq('org_id', activeOrg.orgId)
+        .single()
+
+      setOrgSettings(orgSettings || null)
+
       // Fetch line items separately ← this is the key fix
 
       const { data: lineItems, error: itemsErr } = await supabase
         .from('invoice_items')
         .select('*')
         .eq('invoice_id', id)
-// console.log('Line items:', lineItems, 'Error:', itemsErr)  // ← what's here?
+
       if (itemsErr) throw itemsErr
       
       const fetchedItems = lineItems ?? []
@@ -829,7 +836,7 @@ async function saveChanges() {
     await supabase
       .from('invoice_items')
       .delete()
-      .eq('invoice_id', id)
+    //  .eq('invoice_id', id)
       .eq('org_id', activeOrg.orgId)
 
    // const { error: delErr } = await supabase
@@ -845,11 +852,11 @@ async function saveChanges() {
         .from('invoice_items')
         .insert(validItems.map(i => ({
           invoice_id:     id,
-          org_id:         activeOrg.Id, // ✅ THIS WAS MISSING
+          org_id:         activeOrg.orgId,  // ← fix: orgId not Id
           name:           i.name.trim(),
           quantity:       Number(i.quantity),
           unit_price:     Number(i.unit_price) || 0,
-          discount_type:  i.discount_type  || 'none',
+          discount_type:  i.discount_type || 'none',
           discount_value: Number(i.discount_value) || 0,
         })))
       if (insErr) throw insErr
@@ -958,6 +965,15 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
             <div className="inv-brand">
               <div className="inv-brand-name">INVOICE</div>
               <div className="inv-brand-tagline">Tax Invoice</div>
+              {/* GST# */}
+                    {orgSettings?.gst_number && (
+                      <div className="inv-brand-tagline">
+                        <span className="inv-date-label">GST #</span>
+                        <span className="inv-date-value" style={{ color: '#475569' }}>
+                          {orgSettings.gst_number}
+                        </span>
+                      </div>
+                    )}
             </div>
             <div className="inv-header-right">
               <div>
@@ -1002,7 +1018,8 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                       <span className="inv-date-value">{invoice?.due_date ? fmtDate(invoice.due_date) : 'Net 30'}</span>
                     </div>
                   </div>
-                </div>
+                  
+                  </div>
 
                 {/* Items table */}
                 <div className="inv-table-wrap">
@@ -1078,7 +1095,14 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                   </div>
                 </div>
 
-                <div className="inv-footer-note">Thank you for your business.</div>
+                <div className="inv-footer-note">
+                  {orgSettings?.gst_number && (
+                    <div style={{ marginBottom: 6, fontWeight: 600, color: '#475569', fontSize: 13 }}>
+                      GST #: {orgSettings.gst_number}
+                    </div>
+                  )}
+                  Thank you for your business.
+                </div>
               </>
             )}
 
