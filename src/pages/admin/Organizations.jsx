@@ -379,38 +379,57 @@ export default function Organizations() {
   }
 
   async function handleAddMember(orgId) {
-    const email = memberEmail[orgId]?.trim()
-    const role  = memberRole[orgId] || 'member'
-    if (!email) return
+  const email = memberEmail[orgId]?.trim().toLowerCase()
+  const role  = memberRole[orgId] || 'member'
+  if (!email) return
 
-    setAddingMember(prev => ({ ...prev, [orgId]: true }))
-    setMemberError(prev => ({ ...prev, [orgId]: '' }))
+  setAddingMember(prev => ({ ...prev, [orgId]: true }))
+  setMemberError(prev => ({ ...prev, [orgId]: '' }))
 
-    try {
-      // Look up user by email in profiles
-      const { data: profile, error: profileErr } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', email)
-        .single()
+  try {
+    // Try profiles table first
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .ilike('email', email)  // case-insensitive match
+      .single()
 
-      if (profileErr || !profile) throw new Error('No user found with that email. They must sign up first.')
+    let userId = profile?.id
 
-      const { error } = await supabase.from('organization_members').insert({
-        org_id:  orgId,
-        user_id: profile.id,
-        role,
-      })
-      if (error) throw error
-
-      setMemberEmail(prev => ({ ...prev, [orgId]: '' }))
-      await fetchMembers(orgId)
-    } catch (err) {
-      setMemberError(prev => ({ ...prev, [orgId]: err.message }))
-    } finally {
-      setAddingMember(prev => ({ ...prev, [orgId]: false }))
+    // Fall back to RPC if profiles lookup failed
+    if (!userId) {
+      const { data: rpcId } = await supabase
+        .rpc('get_user_id_by_email', { email_input: email })
+      userId = rpcId
     }
+
+    if (!userId) throw new Error('No user found with that email. They must sign up first.')
+
+    // Check if already a member
+    const { data: existing } = await supabase
+      .from('organization_members')
+      .select('user_id')
+      .eq('org_id', orgId)
+      .eq('user_id', userId)
+      .single()
+
+    if (existing) throw new Error('This user is already a member of this organization.')
+
+    const { error } = await supabase.from('organization_members').insert({
+      org_id:  orgId,
+      user_id: userId,
+      role,
+    })
+    if (error) throw error
+
+    setMemberEmail(prev => ({ ...prev, [orgId]: '' }))
+    await fetchMembers(orgId)
+  } catch (err) {
+    setMemberError(prev => ({ ...prev, [orgId]: err.message }))
+  } finally {
+    setAddingMember(prev => ({ ...prev, [orgId]: false }))
   }
+}
 
   async function handleRemoveMember(orgId, userId) {
     if (!window.confirm('Remove this member from the org?')) return
