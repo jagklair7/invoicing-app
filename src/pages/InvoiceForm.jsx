@@ -17,6 +17,7 @@ export default function InvoiceForm() {
     date: new Date().toISOString().split('T')[0],
     due_date: '',
     status: 'draft',
+    notes: '', 
   })
   const [items, setItems] = useState([{ name: '', quantity: 1, unit_price: 0 }])
 
@@ -178,6 +179,17 @@ export default function InvoiceForm() {
           <div className="flex gap-10"><span className="text-sm font-semibold text-gray-700">Total</span><span className="text-xl font-bold text-gray-900 w-24 text-right">${total.toFixed(2)}</span></div>
         </div>
       </div>
+
+      <div className="bg-white p-6 rounded-2xl border">
+  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Notes</h3>
+  <textarea
+    className="w-full p-3 border rounded-lg text-sm resize-vertical"
+    rows={4}
+    placeholder="Payment terms, bank details, thank you note..."
+    value={invoice.notes}
+    onChange={e => setInvoice({ ...invoice, notes: e.target.value })}
+  />
+</div>
 
       <button type="submit" disabled={saving}
         className="w-full bg-teal-700 text-white py-3 rounded-xl font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors">

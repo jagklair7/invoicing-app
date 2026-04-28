@@ -698,6 +698,7 @@ export default function InvoiceView() {
     number: '', // Will be filled by user or auto-gen logic
     date: new Date().toISOString().split('T')[0],
     status: 'draft',
+    //notes: '',   // ← add this
     // ... other fields
   })
 
@@ -716,6 +717,7 @@ export default function InvoiceView() {
   const [editDate, setEditDate]     = useState('')
   const [editDue, setEditDue]       = useState('')
   const [editItems, setEditItems]   = useState([])
+  const [editNotes, setEditNotes] = useState('')
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchInvoice() {
@@ -734,6 +736,7 @@ export default function InvoiceView() {
 
       setInvoice(data)
       setCustomer(data.customers)
+      setEditNotes(data.notes || '')
 
       // After fetching invoice, also fetch org settings
       const { data: orgSettings } = await supabase
@@ -802,6 +805,7 @@ export default function InvoiceView() {
     setEditDate(invoice?.date || today())
     setEditDue(invoice?.due_date || '')
     setIsEditing(false)
+    setEditNotes(invoice?.notes || '')
   }
 
   // ── Live totals in edit mode ───────────────────────────────────────────────
@@ -827,7 +831,9 @@ async function saveChanges() {
         due_date: editDue || null, 
         subtotal: editSubtotal, 
         tax: editTax, 
-        total: editTotal })
+        total: editTotal,
+        notes: editNotes, 
+      })
       .eq('id', id)
       .eq('org_id', activeOrg.orgId)
     if (invErr) throw invErr
@@ -835,8 +841,8 @@ async function saveChanges() {
     await supabase
       .from('invoice_items')
       .delete()
-    //  .eq('invoice_id', id)
-      .eq('org_id', activeOrg.orgId)
+      .eq('invoice_id', id)
+    //  .eq('org_id', activeOrg.orgId)
 
    // const { error: delErr } = await supabase
    //   .from('invoice_items').delete().eq('invoice_id', id)
@@ -1163,6 +1169,34 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                   </div>
                 </div>
 
+                {invoice?.notes && (
+                  <div style={{
+                    marginTop: 28,
+                    paddingTop: 18,
+                    borderTop: '1px dashed #e2e8f0'
+                  }}>
+                    <div style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: '#94a3b8',
+                      marginBottom: 8
+                    }}>
+                      Notes
+                    </div>
+
+                    <div style={{
+                      fontSize: 13,
+                      color: '#475569',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {invoice.notes}
+                    </div>
+                  </div>
+                )}
+
                 <div className="inv-footer-note">
                   {orgSettings?.gst_number && (
                     <div style={{ marginBottom: 6, fontWeight: 600, color: '#475569', fontSize: 13 }}>
@@ -1323,6 +1357,23 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                     <span className="inv-total-value">{fmt(editTotal)}</span>
                   </div>
                 </div>
+
+                  <div style={{
+                      marginTop: 20
+                    }}>
+                      <div className="inv-field">
+                        <label className="inv-field-label">Notes</label>
+                        <textarea
+                          className="inv-input"
+                          rows={4}
+                          placeholder="Payment terms, bank details, thank you note..."
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          style={{ resize: 'vertical' }}
+                        />
+                      </div>
+                    </div>
+
               </>
             )}
 

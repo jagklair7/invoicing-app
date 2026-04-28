@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useNavigate } from 'react-router-dom'
+import { useOrg } from '../context/OrgContext'
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -313,6 +314,8 @@ function greetingTime() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { activeOrg, settings } = useOrg()   // ← add this
+
   const [loading, setLoading]       = useState(true)
   const [stats, setStats]           = useState({ total: 0, paid: 0, outstanding: 0, customers: 0, draft: 0, sent: 0 })
   const [recent, setRecent]         = useState([])
@@ -320,21 +323,37 @@ export default function Dashboard() {
   const [chartData, setChartData]   = useState([])
   const [bizName, setBizName]       = useState('Klair Computer Inc.')
 
-  useEffect(() => { fetchAll() }, [])
+ // useEffect(() => { fetchAll() }, [])
+
+  // ← re-fetch whenever active org changes
+  useEffect(() => {
+    if (activeOrg?.orgId) fetchAll()
+  }, [activeOrg?.orgId])
 
   async function fetchAll() {
     setLoading(true)
     try {
       const [invRes, custRes, settingsRes] = await Promise.all([
-        supabase.from('invoices').select('*, customers(name)').order('created_at', { ascending: false }),
-        supabase.from('customers').select('id'),
-        supabase.from('settings').select('key, value')
+        supabase.from('invoices').select('*, customers(name)')
+        .eq('org_id', activeOrg.orgId)          // ← scoped
+        .order('created_at', { ascending: false }),
+        supabase.from('customers').select('id')
+        .eq('org_id', activeOrg.orgId),          // ← scoped
+      
+       // supabase.from('settings').select('key, value')
+       supabase
+          .from('organization_settings')           // ← correct table
+          .select('company_name')
+          .eq('org_id', activeOrg.orgId)
+          .single()
       ])
 
       const invoices   = invRes.data   || []
       const customers  = custRes.data  || []
 
-      if (settingsRes.data?.business_name) setBizName(settingsRes.data.business_name)
+    //  if (settingsRes.data?.business_name) setBizName(settingsRes.data.business_name)
+    // Use org settings for biz name, fall back to org name
+      setBizName(settingsRes.data?.company_name || activeOrg.name || '')
 
       // ── Stats ──
       const paid        = invoices.filter(i => i.status === 'paid')
