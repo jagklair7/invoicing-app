@@ -689,7 +689,7 @@ function StatusBadge({ status, edit, value, onChange }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function InvoiceView() {
-  const { org } = useOrg()
+  const { activeOrg } = useOrg()
 
   const { id } = useParams()
   const navigate = useNavigate()
@@ -720,26 +720,43 @@ export default function InvoiceView() {
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchInvoice() {
+     if (!activeOrg?.orgId) return   // ← add this guard at the top
     try {
       setLoading(true)
+      // Fetch invoice + customer
       const { data, error } = await supabase
         .from('invoices')
-        .select('*, customers(*), invoice_items(*)')
+        .select('*, customers(*)')
         .eq('id', id)
-        .eq('org_id', org.id)
+        .eq('org_id', activeOrg.orgId)
         .single()
       if (error) throw error
       if (!data) return
+///console.log('Invoice:', data)  // ← does invoice_items appear here?
+
       setInvoice(data)
       setCustomer(data.customers)
-      setItems(data.invoice_items ?? [])
+      
+     // setItems(data.invoice_items ?? [])
+      // Fetch line items separately ← this is the key fix
+
+      const { data: lineItems, error: itemsErr } = await supabase
+        .from('invoice_items')
+        .select('*')
+        .eq('invoice_id', id)
+// console.log('Line items:', lineItems, 'Error:', itemsErr)  // ← what's here?
+      if (itemsErr) throw itemsErr
+      
+      const fetchedItems = lineItems ?? []
+      setItems(fetchedItems)
 
       // Initialize edit states with fetched data
       setEditNumber(data.number || '')
       setEditStatus(data.status)
       setEditDate(data.date || today())
       setEditDue(data.due_date || '')
-      setEditItems(data.invoice_items ?? [])
+      setEditItems(fetchedItems)
+
     } catch (err) {
       console.error(err)
     } finally {
@@ -747,7 +764,10 @@ export default function InvoiceView() {
     }
   }
 
-  useEffect(() => { fetchInvoice() }, [id])
+      useEffect(() => {
+        if (activeOrg?.orgId) fetchInvoice()
+      }, [id, activeOrg?.orgId])
+
 
   // ── Edit helpers ───────────────────────────────────────────────────────────
   function addItem() {
@@ -803,14 +823,14 @@ async function saveChanges() {
         tax: editTax, 
         total: editTotal })
       .eq('id', id)
-      .eq('org_id', org.id)
+      .eq('org_id', activeOrg.orgId)
     if (invErr) throw invErr
     
     await supabase
       .from('invoice_items')
       .delete()
       .eq('invoice_id', id)
-      .eq('org_id', org.id)
+      .eq('org_id', activeOrg.orgId)
 
    // const { error: delErr } = await supabase
    //   .from('invoice_items').delete().eq('invoice_id', id)
@@ -825,7 +845,7 @@ async function saveChanges() {
         .from('invoice_items')
         .insert(validItems.map(i => ({
           invoice_id:     id,
-          org_id:         org.id, // ✅ THIS WAS MISSING
+          org_id:         activeOrg.Id, // ✅ THIS WAS MISSING
           name:           i.name.trim(),
           quantity:       Number(i.quantity),
           unit_price:     Number(i.unit_price) || 0,
@@ -848,7 +868,7 @@ async function saveChanges() {
   // ── Delete ─────────────────────────────────────────────────────────────────
   async function deleteInvoice() {
     if (!window.confirm('Delete this invoice? This cannot be undone.')) return
-    await supabase.from('invoices').delete().eq('id', id).eq('org_id', org.id)  
+    await supabase.from('invoices').delete().eq('id', id).eq('org_id', activeOrg.orgId)  
     navigate(-1)
   }
 

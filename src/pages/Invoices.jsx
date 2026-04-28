@@ -2,24 +2,29 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useOrg } from '../context/OrgContext'
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState([])
   const [filter, setFilter] = useState('all')
   const navigate = useNavigate()
   const location = useLocation()
+  const { activeOrg } = useOrg()
 
-  useEffect(() => {
-    fetchInvoices()
-  }, [location.key])
+   useEffect(() => {
+  if (activeOrg?.orgId) fetchInvoices()
+}, [location.key, activeOrg?.orgId])
 
   async function fetchInvoices() {
+    if (!activeOrg?.orgId) return    
+    
     const { data, error } = await supabase
       .from('invoices')
       // ↓ THIS is the fix — join customers so inv.customers.name is available
       .select('*, customers(id, name)')
+      .eq('org_id', activeOrg.orgId)
       .order('created_at', { ascending: false })
-
+  //      console.log('Results:', data, 'Error:', error)   // ← what comes back?
     if (error) console.error(error)
     setInvoices(data || [])
   }
