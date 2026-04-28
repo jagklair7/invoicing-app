@@ -700,9 +700,7 @@ export default function InvoiceView() {
     status: 'draft',
     // ... other fields
   })
-  //const handleInvoiceChange = (e) => {
-  // setInvoice({ ...invoice, [e.target.name]: e.target.value })
-  //}
+
   const [customer, setCustomer]     = useState(null)
   const [items, setItems]           = useState([])
   const [orgSettings, setOrgSettings] = useState(null)
@@ -710,6 +708,7 @@ export default function InvoiceView() {
   const [isEditing, setIsEditing]   = useState(false)
   const [saving, setSaving]         = useState(false)
   const [exporting, setExporting]   = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
 
   // Edit state
   const [editNumber, setEditNumber] = useState('') // Specifically for the editable Invoice No. field
@@ -872,6 +871,68 @@ async function saveChanges() {
     setSaving(false)
   }
 }
+  // ── Duplicate ───────────────────────────────────────────────────────
+  async function duplicateInvoice() {
+  if (!activeOrg?.orgId) return
+  setDuplicating(true)
+  try {
+    // Generate next invoice number
+    const { data: lastInv } = await supabase
+      .from('invoices')
+      .select('number')
+      .eq('org_id', activeOrg.orgId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const lastNum = lastInv?.[0]?.number
+      ? parseInt(lastInv[0].number.replace(/\D/g, '')) || 0
+      : 0
+    const newNumber = `${String(lastNum + 1).padStart(3, '0')}`
+
+    // Create duplicate invoice
+    const { data: newInv, error: invErr } = await supabase
+      .from('invoices')
+      .insert({
+        org_id:      activeOrg.orgId,
+        customer_id: invoice.customer_id,
+        number:      newNumber,
+        date:        new Date().toISOString().split('T')[0],
+        due_date:    invoice.due_date || null,
+        status:      'draft',              // always starts as draft
+        subtotal:    invoice.subtotal,
+        tax:         invoice.tax,
+        total:       invoice.total,
+        notes:       invoice.notes || null,
+      })
+      .select()
+      .single()
+    if (invErr) throw invErr
+
+    // Copy line items
+    if (items.length > 0) {
+      const { error: itemsErr } = await supabase
+        .from('invoice_items')
+        .insert(items.map(i => ({
+          invoice_id:     newInv.id,
+          org_id:         activeOrg.orgId,
+          name:           i.name,
+          quantity:       i.quantity,
+          unit_price:     i.unit_price,
+          discount_type:  i.discount_type  || 'none',
+          discount_value: i.discount_value || 0,
+        })))
+      if (itemsErr) throw itemsErr
+    }
+
+    // Navigate to the new duplicate
+    navigate(`/invoices/${newInv.id}`)
+  } catch (err) {
+    alert('Duplicate failed: ' + err.message)
+  } finally {
+    setDuplicating(false)
+  }
+}
+
   // ── Delete ─────────────────────────────────────────────────────────────────
   async function deleteInvoice() {
     if (!window.confirm('Delete this invoice? This cannot be undone.')) return
@@ -937,6 +998,13 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                   disabled={exporting}
                 >
                   {exporting ? 'Generating…' : '↓ Export PDF'}
+                </button>
+                <button                                          // ← ADD THIS
+                  className="inv-btn"
+                  onClick={duplicateInvoice}
+                  disabled={duplicating}
+                >
+                  {duplicating ? 'Duplicating…' : '⧉ Duplicate'}
                 </button>
                 <button className="inv-btn inv-btn--primary" onClick={() => setIsEditing(true)}>
                   Edit Invoice
