@@ -667,6 +667,82 @@ const css = `
     .inv-edit-meta-right { grid-template-columns: 1fr 1fr; }
     .inv-item-row { grid-template-columns: 1fr 70px 90px 28px; }
   }
+
+    /* ── Send modal ── */
+    .inv-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+      backdrop-filter: blur(2px);
+    }
+    .inv-modal {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.18);
+      width: 100%;
+      max-width: 460px;
+      overflow: hidden;
+    }
+    .inv-modal-header {
+      background: linear-gradient(135deg, #1e293b 0%, #2d3f55 100%);
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .inv-modal-title {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 18px;
+      font-weight: 600;
+      color: white;
+      letter-spacing: -0.01em;
+    }
+    .inv-modal-close {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: white;
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .inv-modal-close:hover { background: rgba(255,255,255,0.2); }
+    .inv-modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .inv-modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .inv-send-success {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #e8f5f5;
+      border: 1px solid #b2e0e2;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #0d7377;
+      font-weight: 500;
+    }
+    .inv-send-error {
+      background: #fff5f5;
+      border: 1px solid #fecaca;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #e53e3e;
+    }
+
 `
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -710,6 +786,13 @@ export default function InvoiceView() {
   const [saving, setSaving]         = useState(false)
   const [exporting, setExporting]   = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+
+  // For Sending Emails
+  const [sending, setSending]         = useState(false)
+  const [showSendModal, setShowSendModal] = useState(false)
+  const [sendEmail, setSendEmail]     = useState('')
+  const [sendNote, setSendNote]       = useState('')
+  const [sendResult, setSendResult]   = useState(null) // 'success' | 'error'
 
   // Edit state
   const [editNumber, setEditNumber] = useState('') // Specifically for the editable Invoice No. field
@@ -777,6 +860,94 @@ export default function InvoiceView() {
         if (activeOrg?.orgId) fetchInvoice()
       }, [id, activeOrg?.orgId])
 
+      //Send email helper
+        async function handleSendInvoice() {
+          if (!sendEmail.trim()) return
+          setSending(true)
+          setSendResult(null)
+          try {
+            // 1. Generate PDF as base64
+            const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items)
+
+            // 2. Build email HTML
+            const html = `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+                <div style="background: #1e293b; padding: 28px 32px; border-radius: 12px 12px 0 0;">
+                  <h1 style="color: white; font-size: 22px; margin: 0;">Invoice ${invoice.number}</h1>
+                  <p style="color: rgba(255,255,255,0.6); margin: 6px 0 0; font-size: 14px;">
+                    From ${orgSettings?.company_name || activeOrg?.name || ''}
+                  </p>
+                </div>
+                <div style="background: #f8fafc; padding: 28px 32px; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none;">
+                  <p style="font-size: 15px; margin: 0 0 16px;">Hi ${customer?.name || 'there'},</p>
+                  <p style="font-size: 14px; color: #475569; margin: 0 0 16px;">
+                    Please find your invoice attached. Here's a summary:
+                  </p>
+                  <div style="background: white; border-radius: 10px; padding: 16px 20px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                      <span style="color: #94a3b8; font-size: 13px;">Invoice #</span>
+                      <span style="font-weight: 600; font-size: 13px;">${invoice.number}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                      <span style="color: #94a3b8; font-size: 13px;">Amount Due</span>
+                      <span style="font-weight: 700; font-size: 16px; color: #0d7377;">${fmt(invoice.total)}</span>
+                    </div>
+                    ${invoice.due_date ? `
+                    <div style="display: flex; justify-content: space-between;">
+                      <span style="color: #94a3b8; font-size: 13px;">Due Date</span>
+                      <span style="font-weight: 600; font-size: 13px;">${fmtDate(invoice.due_date)}</span>
+                    </div>` : ''}
+                  </div>
+                  ${sendNote ? `<p style="font-size: 14px; color: #475569; margin: 0 0 16px;">${sendNote}</p>` : ''}
+                  ${orgSettings?.gst_number ? `<p style="font-size: 12px; color: #94a3b8;">GST #: ${orgSettings.gst_number}</p>` : ''}
+                  <p style="font-size: 13px; color: #94a3b8; margin: 16px 0 0;">
+                    ${orgSettings?.company_name || ''} · ${orgSettings?.company_phone || ''} · ${orgSettings?.company_email || ''}
+                  </p>
+                </div>
+              </div>
+            `
+
+            // 3. Call Edge Function
+            const { data: { session } } = await supabase.auth.getSession()
+            const res = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invoice`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type':  'application/json',
+                  'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                  to:        sendEmail.trim(),
+                  subject:   `Invoice ${invoice.number} from ${orgSettings?.company_name || activeOrg?.name}`,
+                  html,
+                  pdfBase64,
+                  filename,
+                })
+              }
+            )
+
+            const result = await res.json()
+            if (!res.ok) throw new Error(result.error?.message || JSON.stringify(result.error))
+
+            // 4. Mark invoice as sent if it was draft
+            if (invoice.status === 'draft') {
+              await supabase
+                .from('invoices')
+                .update({ status: 'sent' })
+                .eq('id', id)
+                .eq('org_id', activeOrg.orgId)
+              await fetchInvoice()
+            }
+
+            setSendResult('success')
+          } catch (err) {
+            console.error(err)
+            setSendResult('error: ' + err.message)
+          } finally {
+            setSending(false)
+          }
+        }
 
   // ── Edit helpers ───────────────────────────────────────────────────────────
   function addItem() {
@@ -1005,6 +1176,20 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                 >
                   {exporting ? 'Generating…' : '↓ Export PDF'}
                 </button>
+
+                {/* ← ADD HERE */}
+                <button
+                  className="inv-btn"
+                  onClick={() => {
+                    setSendEmail(customer?.email || '')
+                    setSendNote('')
+                    setSendResult(null)
+                    setShowSendModal(true)
+                  }}
+                >
+                  ✉ Send
+                </button>
+
                 <button                                          // ← ADD THIS
                   className="inv-btn"
                   onClick={duplicateInvoice}
@@ -1015,9 +1200,9 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                 <button className="inv-btn inv-btn--primary" onClick={() => setIsEditing(true)}>
                   Edit Invoice
                 </button>
-                <button className="inv-btn--ghost" onClick={() => supabase.auth.signOut()}>
-                  Logout
-                </button>
+                {/* <button className="inv-btn--ghost" onClick={() => supabase.auth.signOut()}>
+                 // Logout
+               // </button> */}
               </>
             )}
           </div>
@@ -1052,16 +1237,37 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
             <div className="inv-header-right">
               <div>
                 <div className="inv-number-label">Invoice No.</div>
-                <div className="inv-number-value">{invoice?.number}</div>
+                 {/* ── CHANGE BLOCK TO Change Invoice Number ── */}   
+                    {isEditing ? (
+                      <input
+                        className="inv-input"
+                        value={editNumber}
+                        onChange={e => setEditNumber(e.target.value)}
+                        style={{
+                          fontSize: 20,
+                          fontFamily: "'Fraunces', Georgia, serif",
+                          fontWeight: 300,
+                          color: 'white',
+                          background: 'rgba(255,255,255,0.1)',
+                          border: '1.5px solid rgba(255,255,255,0.25)',
+                          borderRadius: 8,
+                          padding: '6px 12px',
+                          width: 160,
+                          letterSpacing: '0.02em',
+                        }}
+                      />
+                    ) : (
+                      <div className="inv-number-value">{invoice?.number}</div>
+                    )}
+                  </div>
+                  <StatusBadge
+                    status={invoice?.status}
+                    edit={isEditing}
+                    value={editStatus}
+                    onChange={setEditStatus}
+                  />
+                </div>
               </div>
-              <StatusBadge
-                status={invoice?.status}
-                edit={isEditing}
-                value={editStatus}
-                onChange={setEditStatus}
-              />
-            </div>
-          </div>
 
           {/* Body */}
           <div className="inv-body">
@@ -1069,6 +1275,7 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
             {/* ── View mode ── */}
             {!isEditing && (
               <>
+              
                 <div className="inv-meta-row">
                   {/* Bill to */}
                   <div>
@@ -1379,7 +1586,91 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
 
           </div>
         </div>
-      </div>
+      </div>       {/* closes inv-root */}
+      {/* ── Send Invoice Modal — must be OUTSIDE inv-card and inv-root ── */}
+      {showSendModal && (
+        <div className="inv-modal-overlay" onClick={() => !sending && setShowSendModal(false)}>
+          <div className="inv-modal" onClick={e => e.stopPropagation()}>
+            <div className="inv-modal-header">
+              <span className="inv-modal-title">Send Invoice {invoice.number}</span>
+              <button className="inv-modal-close" onClick={() => setShowSendModal(false)}>×</button>
+            </div>
+
+            <div className="inv-modal-body">
+              {sendResult === 'success' ? (
+                <div className="inv-send-success">
+                  ✓ Invoice sent successfully to {sendEmail}
+                  {invoice.status === 'draft' && ' — status updated to Sent'}
+                </div>
+              ) : (
+                <>
+                  {sendResult && (
+                    <div className="inv-send-error">⚠ {sendResult.replace('error: ', '')}</div>
+                  )}
+                  <div className="inv-field">
+                    <label className="inv-field-label">Send To *</label>
+                    <input
+                      className="inv-input"
+                      type="email"
+                      placeholder="customer@email.com"
+                      value={sendEmail}
+                      onChange={e => setSendEmail(e.target.value)}
+                    />
+                  </div>
+                  <div style={{
+                    background: '#f8fafc', border: '1px solid #e2e8f0',
+                    borderRadius: 10, padding: '12px 16px', fontSize: 13,
+                    display: 'flex', flexDirection: 'column', gap: 6,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Invoice</span>
+                      <span style={{ fontWeight: 600 }}>{invoice.number}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#94a3b8' }}>Amount</span>
+                      <span style={{ fontWeight: 700, color: '#0d7377' }}>{fmt(invoice.total)}</span>
+                    </div>
+                    {invoice.due_date && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#94a3b8' }}>Due</span>
+                        <span style={{ fontWeight: 500 }}>{fmtDate(invoice.due_date)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="inv-field">
+                    <label className="inv-field-label">Personal Note (optional)</label>
+                    <textarea
+                      className="inv-input"
+                      rows={3}
+                      placeholder="e.g. Please let me know if you have any questions."
+                      value={sendNote}
+                      onChange={e => setSendNote(e.target.value)}
+                      style={{ resize: 'vertical' }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                    📎 PDF will be attached · Invoice will be marked as <strong>Sent</strong> if currently draft
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="inv-modal-footer">
+              <button className="inv-btn inv-btn--ghost" onClick={() => setShowSendModal(false)}>
+                {sendResult === 'success' ? 'Close' : 'Cancel'}
+              </button>
+              {sendResult !== 'success' && (
+                <button
+                  className="inv-btn inv-btn--primary"
+                  onClick={handleSendInvoice}
+                  disabled={sending || !sendEmail.trim()}
+                >
+                  {sending ? 'Sending…' : '✉ Send Invoice'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}    
     </>
   )
 }

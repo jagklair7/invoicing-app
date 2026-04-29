@@ -1,5 +1,5 @@
 // src/app/supabaseClient.js
-//console.log("SUPABASE URL:", import.meta.env.VITE_SUPABASE_URL)
+console.log("SUPABASE URL:", import.meta.env.VITE_SUPABASE_URL)
 import { createClient } from '@supabase/supabase-js'
 
 export const supabase = createClient(

@@ -19,7 +19,7 @@ import { jsPDF } from 'jspdf'
 import { supabase } from '../app/supabaseClient' // Make sure this path is correct
 // ── Colours ───────────────────────────────────────────────────────────────────
 const C = {
-  slate:     [146, 201, 192],  // #b1b8b7d8 — header bg
+  slate:     [146, 201, 192],  // #92c9c0d8 — header bg
   teal:      [13,  115, 119],  // #0d7477e8 — accent
   tealLight: [232, 245, 245],  // #e8f5f5
   text:      [30,  41,  59],   // body text
@@ -89,8 +89,7 @@ function loadImage(src) {
 export async function exportInvoicePDF(invoice, customer, items) {
    //1. Fetch current settings from Supabase
   const { data: settingsData, error } = await supabase.from('settings').select('key, value')
-  // Inside exportInvoicePDF(invoice, customer, items)
-  const hasAnyDiscount = items.some(i => i.discount_value > 0 && i.discount_type !== 'none');
+
   if (error) {
     console.error("Error fetching settings:", error);
   }
@@ -179,12 +178,12 @@ if (C.slate) {
   const badgeW = 20, badgeH = 5.5
   const bx = pw - mr - badgeW
   const by = 32
-  //doc.setFillColor(...sBg.map(c => Math.min(c + 160, 255)))  // light tint
-  //doc.roundedRect(bx, by, badgeW, badgeH, 2, 2, 'F')
-  //doc.setFont('helvetica', 'bold')
-  //doc.setFontSize(7)
- // doc.setTextColor(...sBg)
- // doc.text(statusLabel, bx + badgeW / 2, by + 3.7, { align: 'center' })
+  doc.setFillColor(...sBg.map(c => Math.min(c + 160, 255)))  // light tint
+  doc.roundedRect(bx, by, badgeW, badgeH, 2, 2, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  doc.setTextColor(...sBg)
+  doc.text(statusLabel, bx + badgeW / 2, by + 3.7, { align: 'center' })
 
   y = headerH + 10
 
@@ -272,22 +271,14 @@ if (C.slate) {
   y += 8
 
   // ── 4. Items table ─────────────────────────────────────────────────────────
-  const showDiscount = items.some(i => i.discount_value > 0 && i.discount_type !== 'none');
   // Column config
-  const cols = showDiscount
-  ? {
-      desc:     { x: ml,               w: cw * 0.38, align: 'left'  },
-      qty:      { x: ml + cw * 0.38,   w: cw * 0.10, align: 'right' },
-      price:    { x: ml + cw * 0.48,   w: cw * 0.17, align: 'right' },
-      discount: { x: ml + cw * 0.65,   w: cw * 0.16, align: 'right' },
-      amt:      { x: ml + cw * 0.81,   w: cw * 0.19, align: 'right' },
-    }
-  : {
-      desc:     { x: ml,               w: cw * 0.45, align: 'left'  },
-      qty:      { x: ml + cw * 0.45,   w: cw * 0.12, align: 'right' },
-      price:    { x: ml + cw * 0.57,   w: cw * 0.18, align: 'right' },
-      amt:      { x: ml + cw * 0.75,   w: cw * 0.25, align: 'right' },
-    };
+  const cols = {
+  desc:     { x: ml,               w: cw * 0.38, align: 'left'  },
+  qty:      { x: ml + cw * 0.38,   w: cw * 0.10, align: 'right' },
+  price:    { x: ml + cw * 0.48,   w: cw * 0.17, align: 'right' },
+  discount: { x: ml + cw * 0.65,   w: cw * 0.16, align: 'right' },
+  amt:      { x: ml + cw * 0.81,   w: cw * 0.19, align: 'right' },
+}
   const colRight = (col) => col.x + col.w
 
   // Table header row
@@ -299,20 +290,13 @@ if (C.slate) {
   doc.setFontSize(7)
   setColor(doc, C.teal)
 
-  const headers = showDiscount
-  ? [
-      ['DESCRIPTION', cols.desc,  'left'],
-      ['QTY',         cols.qty,   'right'],
-      ['UNIT PRICE',  cols.price, 'right'],
-      ['DISCOUNT',    cols.discount, 'right'],
-      ['AMOUNT',      cols.amt,   'right'],
-    ]
-  : [
-      ['DESCRIPTION', cols.desc,  'left'],
-      ['QTY',         cols.qty,   'right'],
-      ['UNIT PRICE',  cols.price, 'right'],
-      ['AMOUNT',      cols.amt,   'right'],
-    ];
+  const headers = [
+    ['DESCRIPTION', cols.desc,  'left'],
+    ['QTY',         cols.qty,   'right'],
+    ['UNIT PRICE',  cols.price, 'right'],
+    ['DISCOUNT',    cols.discount, 'right'],
+    ['AMOUNT',      cols.amt,   'right'],
+  ]
 
   headers.forEach(([label, col, align]) => {
     const tx = align === 'right' ? colRight(col) - 1 : col.x + 1
@@ -342,17 +326,15 @@ if (C.slate) {
   doc.text(fmt(item.unit_price), colRight(cols.price) - 1, y + 5.2, { align: 'right' })
 
   // Discount column
-  if (showDiscount) {
-    if (lineDiscount > 0) {
-      setColor(doc, C.green)
-      const discLabel = item.discount_type === 'percent'
-        ? `-${item.discount_value}%`
-        : `-${fmt(item.discount_value)}`
-      doc.text(discLabel, colRight(cols.discount) - 1, y + 5.2, { align: 'right' })
-    } else {
-      setColor(doc, C.light)
-      doc.text('—', colRight(cols.discount) - 1, y + 5.2, { align: 'right' })
-    }
+  if (lineDiscount > 0) {
+    setColor(doc, C.green)
+    const discLabel = item.discount_type === 'percent'
+      ? `-${item.discount_value}%`
+      : `-${fmt(item.discount_value)}`
+    doc.text(discLabel, colRight(cols.discount) - 1, y + 5.2, { align: 'right' })
+  } else {
+    setColor(doc, C.light)
+    doc.text('—', colRight(cols.discount) - 1, y + 5.2, { align: 'right' })
   }
 
   // Amount — strikethrough original if discounted
@@ -444,17 +426,4 @@ if (C.slate) {
   // ── 7. Save ────────────────────────────────────────────────────────────────
   const filename = `${invoice.number || 'invoice'}-${customer?.name?.replace(/\s+/g, '-') || 'invoice'}.pdf`
   doc.save(filename)
-  const pdfBase64 = doc.output('datauristring')
-  return { pdfBase64, filename }
-
-   await fetch('/api/send-invoice', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      to: customer.email,
-      subject: `Invoice ${invoice.number}`,
-      pdfBase64,
-      filename
-    })
-  })
 }
