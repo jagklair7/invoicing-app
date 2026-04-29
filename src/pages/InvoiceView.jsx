@@ -952,11 +952,13 @@ export default function InvoiceView() {
                     }
 
                     <div style="text-align:center;margin:28px 0 24px;">
-                      <a href="mailto:${orgSettings?.companyemail || ''}"
-                        style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;">
-                        Contact us
-                      </a>
-                    </div>
+                        <a
+                          href="mailto:invoices@klair.ca"
+                          style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
+                        >
+                          Contact us
+                        </a>
+                      </div>
 
                     <p style="font-size:13px;line-height:1.7;color:#64748b;margin:0;">
                       If you have any questions, please reply to this email and we’ll be happy to help.
