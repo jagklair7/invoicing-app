@@ -9,7 +9,6 @@ import { supabase } from '../app/supabaseClient'
 import { calcLineTotal, calcLineDiscount } from '../utils/discount'
 import { useOrg } from '../context/OrgContext'
 
-
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -687,6 +686,8 @@ const css = `
       width: 100%;
       max-width: 460px;
       overflow: hidden;
+      flex-direction: column;
+      max-height: 90vh;        /* ← prevents modal from exceeding viewport */
     }
     .inv-modal-header {
       background: linear-gradient(135deg, #1e293b 0%, #2d3f55 100%);
@@ -714,13 +715,23 @@ const css = `
       transition: background .15s;
     }
     .inv-modal-close:hover { background: rgba(255,255,255,0.2); }
-    .inv-modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    
+    .inv-modal-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;        /* ← body scrolls if content is too tall */
+      flex: 1;                 /* ← takes remaining space between header and footer */
+    }
     .inv-modal-footer {
       padding: 16px 24px;
       border-top: 1px solid #f1f5f9;
       display: flex;
       gap: 8px;
       justify-content: flex-end;
+      align-items: center;
+      background: #fff;
     }
     .inv-send-success {
       display: flex;
@@ -871,42 +882,104 @@ export default function InvoiceView() {
 
             // 2. Build email HTML
             const html = `
-              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
-                <div style="background: #1e293b; padding: 28px 32px; border-radius: 12px 12px 0 0;">
-                  <h1 style="color: white; font-size: 22px; margin: 0;">Invoice ${invoice.number}</h1>
-                  <p style="color: rgba(255,255,255,0.6); margin: 6px 0 0; font-size: 14px;">
-                    From ${orgSettings?.company_name || activeOrg?.name || ''}
-                  </p>
-                </div>
-                <div style="background: #f8fafc; padding: 28px 32px; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none;">
-                  <p style="font-size: 15px; margin: 0 0 16px;">Hi ${customer?.name || 'there'},</p>
-                  <p style="font-size: 14px; color: #475569; margin: 0 0 16px;">
-                    Please find your invoice attached. Here's a summary:
-                  </p>
-                  <div style="background: white; border-radius: 10px; padding: 16px 20px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                      <span style="color: #94a3b8; font-size: 13px;">Invoice #</span>
-                      <span style="font-weight: 600; font-size: 13px;">${invoice.number}</span>
+              <div style="margin:0;padding:0;background:#f1f5f9;">
+                <div style="max-width:640px;margin:0 auto;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+                  
+                  <div style="background:#1e293b;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+                    <div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;">
+                      ${orgSettings?.companyname || activeOrg?.name || 'Invoice'}
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                      <span style="color: #94a3b8; font-size: 13px;">Amount Due</span>
-                      <span style="font-weight: 700; font-size: 16px; color: #0d7377;">${fmt(invoice.total)}</span>
+                    <div style="font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;margin:0;">
+                      Invoice ${invoice.number}
                     </div>
-                    ${invoice.due_date ? `
-                    <div style="display: flex; justify-content: space-between;">
-                      <span style="color: #94a3b8; font-size: 13px;">Due Date</span>
-                      <span style="font-weight: 600; font-size: 13px;">${fmtDate(invoice.due_date)}</span>
-                    </div>` : ''}
+                    <div style="font-size:14px;color:#cbd5e1;margin-top:8px;">
+                      ${fmt(invoice.total)} due${invoice.duedate ? ` on ${fmtDate(invoice.duedate)}` : ''}
+                    </div>
                   </div>
-                  ${sendNote ? `<p style="font-size: 14px; color: #475569; margin: 0 0 16px;">${sendNote}</p>` : ''}
-                  ${orgSettings?.gst_number ? `<p style="font-size: 12px; color: #94a3b8;">GST #: ${orgSettings.gst_number}</p>` : ''}
-                  <p style="font-size: 13px; color: #94a3b8; margin: 16px 0 0;">
-                    ${orgSettings?.company_name || ''} · ${orgSettings?.company_phone || ''} · ${orgSettings?.company_email || ''}
-                  </p>
-                </div>
-              </div>
-            `
 
+                  <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;padding:32px;">
+                    <p style="font-size:16px;line-height:1.6;margin:0 0 18px;">
+                      Hi ${customer?.name || 'there'},
+                    </p>
+
+                    <p style="font-size:14px;line-height:1.7;color:#475569;margin:0 0 24px;">
+                      Please find your invoice attached. A summary is included below for quick reference.
+                    </p>
+
+                    <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 24px;">
+                      <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+                        <span style="font-size:13px;color:#64748b;">Invoice</span>
+                        <span style="font-size:13px;font-weight:600;color:#1e293b;">${invoice.number}</span>
+                      </div>
+                      <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;">
+                        <span style="font-size:13px;color:#64748b;">Amount Due</span>
+                        <span style="font-size:16px;font-weight:700;color:#0d7377;">${fmt(invoice.total)}</span>
+                      </div>
+                      ${
+                        invoice.duedate
+                          ? `
+                      <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;">
+                        <span style="font-size:13px;color:#64748b;">Due Date</span>
+                        <span style="font-size:13px;font-weight:600;color:#1e293b;">${fmtDate(invoice.duedate)}</span>
+                      </div>`
+                          : ''
+                      }
+                    </div>
+
+                    ${
+                      sendNote
+                        ? `
+                    <div style="background:#f8fafc;border-left:4px solid #0d7377;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
+                      <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">
+                        Personal note
+                      </div>
+                      <div style="font-size:14px;line-height:1.7;color:#334155;white-space:pre-wrap;">
+                        ${sendNote}
+                      </div>
+                    </div>`
+                        : ''
+                    }
+
+                    <div style="text-align:center;margin:28px 0 24px;">
+                      <a href="mailto:${orgSettings?.companyemail || ''}"
+                        style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;">
+                        Contact us
+                      </a>
+                    </div>
+
+                    <p style="font-size:13px;line-height:1.7;color:#64748b;margin:0;">
+                      If you have any questions, please reply to this email and we’ll be happy to help.
+                    </p>
+
+                    <div style="margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#94a3b8;">
+                      <div style="font-weight:600;color:#475569;margin-bottom:4px;">
+                        ${orgSettings?.companyname || activeOrg?.name || 'Your Company'}
+                      </div>
+                      ${
+                        orgSettings?.companyphone
+                          ? `<div>${orgSettings.companyphone}</div>`
+                          : ''
+                      }
+                      ${
+                        orgSettings?.companyemail
+                          ? `<div>${orgSettings.companyemail}</div>`
+                          : ''
+                      }
+                      ${
+                        orgSettings?.companyaddress
+                          ? `<div>${orgSettings.companyaddress}</div>`
+                          : ''
+                      }
+                      ${
+                        orgSettings?.gstnumber
+                          ? `<div style="margin-top:6px;">GST: ${orgSettings.gstnumber}</div>`
+                          : ''
+                      }
+                    </div>
+                  </div>
+                </div>
+              </div>     
+           `
             // 3. Call Edge Function
             const { data: { session } } = await supabase.auth.getSession()
             const res = await fetch(
@@ -1655,12 +1728,14 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
               )}
             </div>
             <div className="inv-modal-footer">
-              <button className="inv-btn inv-btn--ghost" onClick={() => setShowSendModal(false)}>
+              <button className="inv-btn inv-btn--ghost" onClick={() => setShowSendModal(false)}
+                disabled={sending}>
                 {sendResult === 'success' ? 'Close' : 'Cancel'}
               </button>
+
               {sendResult !== 'success' && (
                 <button
-                  className="inv-btn inv-btn--primary"
+                  className="inv-btn inv-btn--ghost"
                   onClick={handleSendInvoice}
                   disabled={sending || !sendEmail.trim()}
                 >
@@ -1669,7 +1744,7 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
               )}
             </div>
           </div>
-        </div>
+        </div> 
       )}    
     </>
   )

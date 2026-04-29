@@ -179,12 +179,12 @@ if (C.slate) {
   const badgeW = 20, badgeH = 5.5
   const bx = pw - mr - badgeW
   const by = 32
-  doc.setFillColor(...sBg.map(c => Math.min(c + 160, 255)))  // light tint
-  doc.roundedRect(bx, by, badgeW, badgeH, 2, 2, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
-  doc.setTextColor(...sBg)
-  doc.text(statusLabel, bx + badgeW / 2, by + 3.7, { align: 'center' })
+  //doc.setFillColor(...sBg.map(c => Math.min(c + 160, 255)))  // light tint
+ // doc.roundedRect(bx, by, badgeW, badgeH, 2, 2, 'F')
+ // doc.setFont('helvetica', 'bold')
+ // doc.setFontSize(7)
+//  doc.setTextColor(...sBg)
+ // doc.text(statusLabel, bx + badgeW / 2, by + 3.7, { align: 'center' })
 
   y = headerH + 10
 
