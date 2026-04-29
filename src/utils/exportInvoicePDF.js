@@ -86,26 +86,37 @@ function loadImage(src) {
 }
 
 // ── Main export function ──────────────────────────────────────────────────────
-export async function exportInvoicePDF(invoice, customer, items) {
-   //1. Fetch current settings from Supabase
-  const { data: settingsData, error } = await supabase.from('settings').select('key, value')
-  // Inside exportInvoicePDF(invoice, customer, items)
-  const hasAnyDiscount = items.some(i => i.discount_value > 0 && i.discount_type !== 'none');
-  if (error) {
-    console.error("Error fetching settings:", error);
-  }
-  // Use an empty array fallback [] to prevent "map/forEach of undefined" errors
-  const settings = (settingsData || []).reduce((acc, item) => {
-    acc[item.key] = item.value;
-    return acc;
-  }, {});
+export async function exportInvoicePDF(invoice, customer, items, orgId) {
+  const hasAnyDiscount = items.some(i => i.discount_value > 0 && i.discount_type !== 'none')
 
-  const COMPANY = {
+  const { data: orgRow } = await supabase
+    .from('organization_settings')
+    .select('company_name, company_address, company_city, company_phone, gst_number, company_logo_url')
+    .eq('org_id', orgId)
+    .single()
+    
+
+  // Use an empty array fallback [] to prevent "map/forEach of undefined" errors
+ // const settings = (settingsData || []).reduce((acc, item) => {
+ //  acc[item.key] = item.value;
+//    return acc;
+//  }, {});
+
+ /* const COMPANY = {
     name:    settings.company_name || 'Klair Computer Inc.',
     address: settings.company_address || '1319 Malone Place NW',
     city:    settings.company_city || 'Edmonton, AB T6R 0G6',
     phone:   settings.company_phone || '780-265-0042',
     logo:    settings.company_logo_url || '/icon.png',   // from /public — served at root in Vite', 
+  } */
+
+    const COMPANY = {
+    name:    orgRow?.company_name    || 'Klair Computer Inc.',
+    address: orgRow?.company_address || '1319 Malone Place NW',
+    city:    orgRow?.company_city    || 'Edmonton, AB T6R 0G6',
+    phone:   orgRow?.company_phone   || '780-265-0042',
+    gst:     orgRow?.gst_number      || '831146329',
+    logo:    orgRow?.company_logo_url || '/icon.png',
   }
 
  // 2. INITIALIZE DOC FIRST TO AVOID CORS ISSUES WITH LOGO LOADING
@@ -153,8 +164,8 @@ if (C.slate) {
   // "INVOICE" label — right side of header
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  //setColor(doc, C.white)
-  setColor(doc, C.gold) 
+  setColor(doc, C.white)
+ // setColor(doc, C.gold) 
   doc.text('INVOICE', pw - mr, 16, { align: 'right' })
 
   // Invoice number under it
@@ -207,6 +218,13 @@ if (C.slate) {
   y += 4.5; doc.text(COMPANY.address, ml, y)
   y += 4;   doc.text(COMPANY.city,    ml, y)
   y += 4;   doc.text(COMPANY.phone,   ml, y)
+  if (COMPANY.gst) {
+  y += 4
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(6.5)
+  setColor(doc, C.text)
+  doc.text(`GST #: ${COMPANY.gst}`, ml, y)
+}
 
   // Right col: Bill To
   const col2x = ml + cw * 0.42
@@ -249,6 +267,7 @@ if (C.slate) {
   const dateRows = [
     ['Issue Date', fmtDate(invoice.date)],
     ['Due Date',   invoice.due_date ? fmtDate(invoice.due_date) : 'Net 30'],
+    ...(invoice.po_number ? [['PO Number', invoice.po_number]] : []),
   ]
   dateRows.forEach(([label, value]) => {
     doc.setFont('helvetica', 'normal')
@@ -283,10 +302,10 @@ if (C.slate) {
       amt:      { x: ml + cw * 0.81,   w: cw * 0.19, align: 'right' },
     }
   : {
-      desc:     { x: ml,               w: cw * 0.45, align: 'left'  },
-      qty:      { x: ml + cw * 0.45,   w: cw * 0.12, align: 'right' },
-      price:    { x: ml + cw * 0.57,   w: cw * 0.18, align: 'right' },
-      amt:      { x: ml + cw * 0.75,   w: cw * 0.25, align: 'right' },
+      desc:  { x: ml,             w: cw * 0.50, align: 'left'  },
+      qty:   { x: ml + cw * 0.50, w: cw * 0.10, align: 'right' },
+      price: { x: ml + cw * 0.60, w: cw * 0.20, align: 'right' },
+      amt:   { x: ml + cw * 0.80, w: cw * 0.20, align: 'right' },
     };
   const colRight = (col) => col.x + col.w
 
@@ -323,7 +342,76 @@ if (C.slate) {
 
   // Item rows
   const rowH = 8
-  items.forEach((item, i) => {
+  // Replace the item rows forEach with this:
+items.forEach((item, i) => {
+  const lineSubtotal = (item.quantity || 0) * (item.unit_price || 0)
+  const lineDiscount = calcLineDiscount(item)
+  const lineTotal    = calcLineTotal(item)
+
+  // Wrap description text to column width
+  const descLines = doc.splitTextToSize(String(item.name || ''), cols.desc.w - 2)
+  const dynamicRowH = Math.max(rowH, descLines.length * 4.5 + 3)
+
+  // Check if we need a new page
+  if (y + dynamicRowH > ph - 30) {
+    doc.addPage()
+    y = 20
+  }
+
+  const bg = i % 2 === 0 ? C.white : [248, 250, 252]
+  setColor(doc, bg, 'fill')
+  doc.rect(ml, y, cw, dynamicRowH, 'F')
+
+  // Description — wrapped, vertically centered
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  setColor(doc, C.text)
+  doc.text(descLines, cols.desc.x + 1, y + 5.2)
+
+  // Other columns — vertically centered in dynamic row
+  const midY = y + dynamicRowH / 2 + 1.5
+
+  setColor(doc, C.muted)
+  doc.text(String(item.quantity || ''), colRight(cols.qty) - 1, midY, { align: 'right' })
+  doc.text(fmt(item.unit_price), colRight(cols.price) - 1, midY, { align: 'right' })
+
+  if (showDiscount) {
+    if (lineDiscount > 0) {
+      setColor(doc, C.green)
+      const discLabel = item.discount_type === 'percent'
+        ? `-${item.discount_value}%`
+        : `-${fmt(item.discount_value)}`
+      doc.text(discLabel, colRight(cols.discount) - 1, midY, { align: 'right' })
+    } else {
+      setColor(doc, C.light)
+      doc.text('—', colRight(cols.discount) - 1, midY, { align: 'right' })
+    }
+  }
+
+  if (lineDiscount > 0) {
+    setColor(doc, C.light)
+    doc.setFontSize(7)
+    const origText = fmt(lineSubtotal)
+    const origX = colRight(cols.amt) - 1
+    doc.text(origText, origX, midY - 2, { align: 'right' })
+    const textW = doc.getTextWidth(origText)
+    doc.setDrawColor(...C.light)
+    doc.setLineWidth(0.3)
+    doc.line(origX - textW, midY - 2.5, origX, midY - 2.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    setColor(doc, C.text)
+    doc.text(fmt(lineTotal), origX, midY + 2, { align: 'right' })
+  } else {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    setColor(doc, C.text)
+    doc.text(fmt(lineTotal), colRight(cols.amt) - 1, midY, { align: 'right' })
+  }
+
+  y += dynamicRowH
+})
+  /*items.forEach((item, i) => {
   const lineSubtotal = (item.quantity || 0) * (item.unit_price || 0)
   const lineDiscount = calcLineDiscount(item)
   const lineTotal    = calcLineTotal(item)
@@ -379,7 +467,7 @@ if (C.slate) {
   }
 
   y += rowH
-})
+}) */
 
   // Bottom border of table
   doc.setDrawColor(...C.border)
@@ -464,6 +552,14 @@ if (invoice.notes && invoice.notes.trim() !== '') {
   doc.setFontSize(8)
   setColor(doc, C.light)
   doc.text('Thank you for your business.', pw / 2, footerY + 5, { align: 'center' })
+
+  /*GST number line
+if (COMPANY.gst) {
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
+  setColor(doc, C.muted)
+  doc.text(`GST #: ${COMPANY.gst}`, ml, footerY + 5)
+} */
   doc.text(COMPANY.name + '  ·  ' + COMPANY.phone, pw / 2, footerY + 9.5, { align: 'center' })
 
   // ── 7. Save ────────────────────────────────────────────────────────────────
@@ -472,7 +568,7 @@ if (invoice.notes && invoice.notes.trim() !== '') {
   const pdfBase64 = doc.output('datauristring')
   return { pdfBase64, filename }
 
-   await fetch('/api/send-invoice', {
+   /*await fetch('/api/send-invoice', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -481,5 +577,5 @@ if (invoice.notes && invoice.notes.trim() !== '') {
       pdfBase64,
       filename
     })
-  })
+  }) */
 }

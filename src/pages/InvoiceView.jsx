@@ -800,6 +800,7 @@ export default function InvoiceView() {
   const [saving, setSaving]         = useState(false)
   const [exporting, setExporting]   = useState(false)
   const [duplicating, setDuplicating] = useState(false)
+  const [editPO, setEditPO] = useState('')
 
   // For Sending Emails
   const [sending, setSending]         = useState(false)
@@ -881,7 +882,7 @@ export default function InvoiceView() {
           setSendResult(null)
           try {
             // 1. Generate PDF as base64
-            const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items)
+            const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
 
             // 2. Build email HTML
             const html = `
@@ -924,7 +925,14 @@ export default function InvoiceView() {
                       <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;">
                         <span style="font-size:13px;color:#64748b;">Due Date</span>
                         <span style="font-size:13px;font-weight:600;color:#1e293b;">${fmtDate(invoice.duedate)}</span>
-                      </div>`
+                      </div>
+                      {/* Add this: */}
+                        {invoice?.po_number && (
+                          <div className="inv-date-row">
+                            <span className="inv-date-label">PO #</span>
+                            <span className="inv-date-value">{invoice.po_number}</span>
+                          </div>
+                        )}`
                           : ''
                       }
                     </div>
@@ -1053,6 +1061,7 @@ export default function InvoiceView() {
     setEditDue(invoice?.due_date || '')
     setIsEditing(false)
     setEditNotes(invoice?.notes || '')
+    setEditPO(invoice?.po_number || '')
   }
 
   // ── Live totals in edit mode ───────────────────────────────────────────────
@@ -1080,6 +1089,7 @@ async function saveChanges() {
         tax: editTax, 
         total: editTotal,
         notes: editNotes, 
+        po_number: editPO,
       })
       .eq('id', id)
       .eq('org_id', activeOrg.orgId)
@@ -1213,7 +1223,7 @@ async function saveChanges() {
   async function handleExportPDF() {
   setExporting(true)
   try {
-    await exportInvoicePDF(invoice, customer, items)
+    await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
   } catch (err) {
     alert('PDF export failed: ' + err.message)
   } finally {
@@ -1514,6 +1524,16 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                       <label className="inv-field-label">Due Date</label>
                       <input className="inv-input" type="date" value={editDue}
                         onChange={e => setEditDue(e.target.value)} />
+                    </div>
+                    <div className="inv-field">
+                      <label className="inv-field-label">PO Number</label>
+                      <input
+                        className="inv-input"
+                        type="text"
+                        placeholder="e.g. PO-1234"
+                        value={editPO}
+                        onChange={e => setEditPO(e.target.value)}
+                      />
                     </div>
                   </div>
                 </div>
