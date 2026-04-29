@@ -429,7 +429,32 @@ if (C.slate) {
     }
   })
 
-  // ── 6. Footer ──────────────────────────────────────────────────────────────
+  // ── 6. Notes ────────────────────────────────────────────────────────────────
+if (invoice.notes && invoice.notes.trim() !== '') {
+  y += 6
+
+  // Section label
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  setColor(doc, C.teal)
+  doc.text('NOTES', ml, y)
+
+  y += 4
+
+  // Notes content (wrapped text)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  setColor(doc, C.muted)
+
+  const maxWidth = pw - ml - mr
+  const lines = doc.splitTextToSize(invoice.notes, maxWidth)
+
+  doc.text(lines, ml, y)
+
+  y += lines.length * 4
+}
+
+  // ── 7. Footer ──────────────────────────────────────────────────────────────
   const footerY = ph - 16
   doc.setDrawColor(...C.border)
   doc.setLineWidth(0.2)
