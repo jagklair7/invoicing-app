@@ -293,6 +293,7 @@ const css = `
     padding: 14px 12px;
     border-bottom: 1px solid #f1f5f9;
     vertical-align: middle;
+    word-break: break-word;   /* ← add this */
   }
 
   .inv-table tbody tr:last-child td { border-bottom: none; }
@@ -306,6 +307,8 @@ const css = `
     font-size: 14px;
     color: var(--slate);
     font-weight: 400;
+    word-break: break-word;   /* ← add this */
+    white-space: pre-wrap;    /* ← preserves line breaks (Enter key) */
   }
 
   .inv-item-num {
@@ -1544,12 +1547,13 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                     return (
                       <div key={item.id || idx}>
                         <div className="inv-item-row" style={{ gridTemplateColumns: '1fr 70px 100px 110px 36px', gap: '8px', marginBottom: '8px' }}>
-                          <input
+                          <textarea
                             className="inv-item-input"
-                            type="text"
                             placeholder="Item description"
                             value={item.name}
                             onChange={e => updateItem(idx, 'name', e.target.value)}
+                            rows={2}
+                            style={{ resize: 'vertical', minHeight: 36 }}
                           />
                           <input
                             className="inv-item-input inv-item-input--num"
