@@ -633,42 +633,64 @@ function ResendModal({ inv, customer, orgSettings, activeOrg, onClose }) {
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState(null)
 
-  async function send() {
-    if (!email.trim()) return
-    setSending(true)
-    try {
-      const html = `
-        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-          <div style="background:#1e293b;padding:24px 28px;border-radius:12px 12px 0 0;">
-            <h2 style="color:white;margin:0;">Invoice ${inv.number}</h2>
-            <p style="color:rgba(255,255,255,0.5);margin:4px 0 0;font-size:13px;">
-              From ${orgSettings?.company_name || ''}
-            </p>
-          </div>
-          <div style="background:#f8fafc;padding:24px 28px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
-            <p>Hi ${customer?.name || 'there'},</p>
-            <p style="color:#475569;">Please find your invoice attached for ${fmt(inv.total)}${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.</p>
-          </div>
+async function send() {
+  if (!email.trim()) return
+  setSending(true)
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) throw new Error('Not authenticated')
+    
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL not set')
+
+    const html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:#1e293b;padding:24px 28px;border-radius:12px 12px 0 0;">
+          <h2 style="color:white;margin:0;">Invoice ${inv.number}</h2>
+          <p style="color:rgba(255,255,255,0.5);margin:4px 0 0;font-size:13px;">
+            From ${orgSettings?.company_name || ''}
+          </p>
         </div>
-      `
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invoice`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-          body: JSON.stringify({ to: email.trim(), subject: `Invoice ${inv.number}`, html, pdfBase64: null, filename: null })
-        }
-      )
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error?.message || 'Send failed')
-      setResult({ ok: true })
-    } catch (err) {
-      setResult({ ok: false, msg: err.message })
-    } finally {
-      setSending(false)
-    }
+        <div style="background:#f8fafc;padding:24px 28px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
+          <p>Hi ${customer?.name || 'there'},</p>
+          <p style="color:#475569;">
+            Please find your invoice <strong>${inv.number}</strong> 
+            for <strong>${fmt(inv.total)}</strong>
+            ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
+          </p>
+          <p style="color:#475569;">Please get in touch if you have any questions.</p>
+        </div>
+      </div>
+    `
+
+    const res = await fetch(
+      `${supabaseUrl}/functions/v1/send-invoice`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          to:        email.trim(),
+          subject:   `Invoice ${inv.number} from ${orgSettings?.company_name || ''}`,
+          html,
+          pdfBase64: '',   // ← empty string, not null
+          filename:  `invoice-${inv.number}.pdf`,
+        })
+      }
+    )
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error?.message || data.error || 'Send failed')
+    setResult({ ok: true })
+  } catch (err) {
+    setResult({ ok: false, msg: err.message })
+  } finally {
+    setSending(false)
   }
+}
 
   return (
     <div className="inv-overlay" onClick={onClose}>
