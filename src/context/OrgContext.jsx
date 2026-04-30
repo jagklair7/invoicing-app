@@ -26,7 +26,7 @@ export function OrgProvider({ children }) {
       .eq('user_id', userData.user.id)
 
     if (!memberships?.length) {
-      setOrgs([]); setActiveOrg(null); setLoading(false); return
+      setOrgs([]); setActiveOrg(null); setSettings(null); setLoading(false); return
     }
 
     const superAdmin = memberships.some(m =>

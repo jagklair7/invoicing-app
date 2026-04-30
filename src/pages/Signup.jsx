@@ -26,9 +26,17 @@ export default function Signup() {
     }
 
     setLoading(true)
-    const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName  // This metadata can be used by a DB trigger to auto-create an organization and link the user as an admin, for example
-        } 
-      } 
+    const siteUrl = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/$/, '')
+    const redirectTo = `${siteUrl}/auth/callback`
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectTo,
+        data: {
+          full_name: fullName  // This metadata can be used by a DB trigger to auto-create an organization and link the user as an admin, for example
+        }
+      }
     })
     if (error) {
       setError(error.message)

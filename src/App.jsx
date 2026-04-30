@@ -11,6 +11,7 @@ import Customers     from './pages/Customers'
 import Invoices      from './pages/Invoices'
 import Login         from './pages/Login.jsx'
 import Signup        from './pages/Signup.jsx'
+import AuthCallback  from './pages/AuthCallback.jsx'
 import Settings      from './pages/Settings.jsx'
 import Dashboard     from './pages/Dashboard.jsx'
 import CustomerStatement from './pages/CustomerStatement.jsx'
@@ -86,6 +87,7 @@ export default function App() {
             <Route path="/create-org" element={<CreateOrganization />} />
             <Route path="/organizations" element={<Organizations />} />
             <Route path="/admin/organizations" element={<Organizations />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

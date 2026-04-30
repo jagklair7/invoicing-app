@@ -314,7 +314,7 @@ function greetingTime() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { activeOrg, settings } = useOrg()   // ← add this
+  const { activeOrg, settings, loading: orgLoading } = useOrg()
 
   const [loading, setLoading]       = useState(true)
   const [stats, setStats]           = useState({ total: 0, paid: 0, outstanding: 0, customers: 0, draft: 0, sent: 0 })
@@ -325,10 +325,14 @@ export default function Dashboard() {
 
  // useEffect(() => { fetchAll() }, [])
 
-  // ← re-fetch whenever active org changes
+  // re-fetch whenever active org changes
   useEffect(() => {
-    if (activeOrg?.orgId) fetchAll()
-  }, [activeOrg?.orgId])
+    if (activeOrg?.orgId) {
+      fetchAll()
+    } else if (!orgLoading) {
+      setLoading(false)
+    }
+  }, [activeOrg?.orgId, orgLoading])
 
   async function fetchAll() {
     setLoading(true)
@@ -416,6 +420,27 @@ export default function Dashboard() {
     <>
       <style>{css}</style>
       <div className="dash"><div className="dash-spinner" /></div>
+    </>
+  )
+
+  if (!activeOrg) return (
+    <>
+      <style>{css}</style>
+      <div className="dash" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ maxWidth: 520, width: '100%', background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 10px 30px rgba(15,23,42,.08)', padding: 32, textAlign: 'center' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>Welcome to Klair</div>
+          <p style={{ color: '#475569', lineHeight: 1.7, marginBottom: 24 }}>
+            You don't have an organization yet. Create one to start sending invoices, managing customers, and tracking revenue.
+          </p>
+          <button
+            className="dash-btn dash-btn--primary"
+            style={{ padding: '12px 20px' }}
+            onClick={() => navigate('/create-org')}
+          >
+            Create your first organization
+          </button>
+        </div>
+      </div>
     </>
   )
 
