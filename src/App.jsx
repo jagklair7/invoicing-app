@@ -85,6 +85,7 @@ export default function App() {
             } />
             <Route path="/create-org" element={<CreateOrganization />} />
             <Route path="/organizations" element={<Organizations />} />
+            <Route path="/admin/organizations" element={<Organizations />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

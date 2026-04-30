@@ -56,6 +56,39 @@ const css = `
   opacity: 0.8;
 }
 .org-switcher__manage:hover { opacity: 1; }
+
+.org-switcher__role {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #0d7377;
+  background: #d1faf8;
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.org-switcher__role--super_admin {
+  color: white;
+  background: #0d7377;
+}
+
+.org-switcher__role--owner {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.org-switcher__role--admin {
+  color: #1e40af;
+  background: #e0e7ff;
+}
+
+.org-switcher__role--member {
+  color: #0f766e;
+  background: #d9f7ef;
+}
 `
 
 export default function OrgSwitcher() {
@@ -72,6 +105,12 @@ export default function OrgSwitcher() {
           <span className="org-switcher__badge">Super Admin</span>
         )}
 
+        {activeOrg?.role && (
+          <span className={`org-switcher__role org-switcher__role--${activeOrg.role}`}>
+            {activeOrg.role.replace('_', ' ')}
+          </span>
+        )}
+
         {orgs.length > 1 ? (
           <select
             className="org-switcher__select"
@@ -83,20 +122,25 @@ export default function OrgSwitcher() {
           >
             {orgs.map(org => (
               <option key={org.orgId} value={org.orgId}>
-                {org.name}
+                {org.name}{org.role ? ` (${org.role.replace('_', ' ')})` : ''}
               </option>
             ))}
           </select>
         ) : (
-          <span className="org-switcher__select" style={{ cursor: 'default' }}>
+          <span className="org-switcher__select" style={{ cursor: 'default', display: 'flex', alignItems: 'center', gap: 6 }}>
             {activeOrg.name}
+            {activeOrg.role && (
+              <span className={`org-switcher__role org-switcher__role--${activeOrg.role}`}>
+                {activeOrg.role.replace('_', ' ')}
+              </span>
+            )}
           </span>
         )}
 
         {isSuperAdmin && (
           <button
             className="org-switcher__manage"
-            onClick={() => navigate('/admin/organizations')}
+            onClick={() => navigate('/organizations')}
           >
             Manage
           </button>

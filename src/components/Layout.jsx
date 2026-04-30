@@ -239,8 +239,23 @@ export default function Layout({ children }) {
           }}>
             <span style={{ color: '#0d7377' }}><BuildingIcon /></span>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#0d7377', lineHeight: 1.2, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {activeOrg.name}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#0d7377', lineHeight: 1.2, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeOrg.name}</span>
+                {activeOrg.role && (
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    padding: '2px 6px',
+                    borderRadius: 9999,
+                    background: activeOrg.role === 'super_admin' ? '#0d7377' : activeOrg.role === 'owner' ? '#fef3c7' : activeOrg.role === 'admin' ? '#e0e7ff' : '#d9f7ef',
+                    color: activeOrg.role === 'super_admin' ? '#fff' : activeOrg.role === 'owner' ? '#b45309' : activeOrg.role === 'admin' ? '#1e40af' : '#0f766e',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {activeOrg.role.replace('_', ' ')}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 10, color: '#5eadb0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Active org
