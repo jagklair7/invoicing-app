@@ -468,7 +468,7 @@ export default function Dashboard() {
             </div>
             <div className="dash-stat-sub">
               {overdue.length > 0
-                ? <b style={{ color: '#e53e3e' }}>{fmt(overdue.reduce((s,i) => s + Number(i.total||0), 0))} at risk</b>
+                ? <b style={{ color: '#e53e3e' }}>{fmt(overdue.reduce((s,i) => s + Number(i.total||0), 0))} is overdue</b>
                 : 'All invoices on track'}
             </div>
           </div>

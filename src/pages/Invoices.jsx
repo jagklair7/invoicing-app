@@ -500,7 +500,13 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
               and remains unpaid.
             </p>
             <p style="font-size:14px;color:#475569;margin:0;">
-              Please arrange payment at your earliest convenience. Contact us if you have any questions.
+              Please arrange payment at your earliest convenience.
+              <a
+                          href="mailto:info@klair.ca"
+                          style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
+                        >
+                          Contact us
+                        </a> if you have any questions.
             </p>
             ${orgSettings?.company_phone ? `<p style="font-size:13px;color:#94a3b8;margin-top:16px;">${orgSettings.company_name || ''} · ${orgSettings.company_phone}</p>` : ''}
           </div>
@@ -660,6 +666,7 @@ async function send() {
             ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
           </p>
           <p style="color:#475569;">Please get in touch if you have any questions.</p>
+          <p style="color:#475569;">Accounts Receivable- Klair Computer</p>
         </div>
       </div>
     `
