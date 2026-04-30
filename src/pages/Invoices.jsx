@@ -665,7 +665,14 @@ async function send() {
             for <strong>${fmt(inv.total)}</strong>
             ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
           </p>
-          <p style="color:#475569;">Please get in touch if you have any questions.</p>
+          <p style="color:#475569;">Please get in touch if you have any questions.
+          <a
+                          href="mailto:info@klair.ca"
+                          style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
+                        >
+                          Contact us
+                        </a>
+          </p>
           <p style="color:#475569;">Accounts Receivable- Klair Computer</p>
         </div>
       </div>
