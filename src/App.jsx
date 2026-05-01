@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './app/supabaseClient'
+import ProductsPage from './pages/ProductsPage'
+
 
 // Pages & Components
 import Layout        from './components/Layout'
@@ -83,6 +85,7 @@ export default function App() {
             <Route path="/org-switcher" element={
               <ProtectedRoute session={session}><OrgSwitcher /></ProtectedRoute>
             } />
+            <Route path="/products" element={<ProductsPage />} />
             <Route path="/create-org" element={<CreateOrganization />} />
             <Route path="/organizations" element={<Organizations />} />
 

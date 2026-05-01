@@ -3,11 +3,21 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 
+const ProdIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" 
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+    <line x1="7" y1="7" x2="7.01" y2="7"/>
+  </svg>
+)
+
 const NAV_ITEMS = [
   { to: '/',             label: 'Dashboard',     icon: <DashIcon /> },
   { to: '/customers',   label: 'Customers',      icon: <CustIcon /> },
   { to: '/invoices',    label: 'Invoices',       icon: <InvIcon />  },
+  { to: '/products',    label: 'Products',       icon: <ProdIcon />  },
 ]
+
 
 const BOTTOM_ITEMS = [
   { to: '/organizations', label: 'Organizations', icon: <OrgIcon />  },
@@ -195,6 +205,7 @@ export default function Layout({ children }) {
           <NavItem to="/"          label="Dashboard" icon={<DashIcon />} end />
           <NavItem to="/customers" label="Customers"  icon={<CustIcon />} />
           <NavItem to="/invoices"  label="Invoices"   icon={<InvIcon />}  />
+          <NavItem to="/products" label="Products" icon={<ProdIcon />} />
         </nav>
 
         {/* Divider label */}
