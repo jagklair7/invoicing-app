@@ -1,5 +1,5 @@
 // src/components/Layout.jsx
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 
@@ -104,16 +104,51 @@ function NavItem({ to, label, icon, end }) {
 // ── Main Layout ───────────────────────────────────────────────────────────────
 export default function Layout({ children }) {
   const navigate = useNavigate()
-  const { orgs, activeOrg, switchOrg, isSuperAdmin } = useOrg()
+  const location = useLocation()
+  const { orgs, activeOrg, switchOrg, isSuperAdmin, loading: orgLoading } = useOrg()
 
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/login')
   }
 
-  if (!orgs || orgs.length === 0) {
+  // Show loading spinner while org context is loading
+  if (orgLoading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', padding: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8fafc' }}>
+        <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#0d7377', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  // Routes that should bypass the blank state check
+  const bypassBlankStateRoutes = ['/create-org', '/auth/callback', '/login', '/signup']
+  const shouldBypassBlankState = bypassBlankStateRoutes.includes(location.pathname)
+
+  // Show blank state only after loading is done and there are no orgs (and not on a bypass route)
+  if (!orgLoading && (!orgs || orgs.length === 0) && !shouldBypassBlankState) {
+    const handleCreateOrgClick = async () => {
+      try {
+        navigate('/create-org')
+      } catch (err) {
+        console.error('Navigation to /create-org failed:', err)
+        alert('Failed to navigate. Try refreshing the page.')
+      }
+    }
+
+    const handleLogoutClick = async () => {
+      try {
+        await supabase.auth.signOut()
+        navigate('/login')
+      } catch (err) {
+        console.error('Logout failed:', err)
+        alert('Logout failed. Try refreshing the page.')
+      }
+    }
+
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', padding: 20, background: '#f8fafc' }}>
         <div style={{
           maxWidth: 480,
           width: '100%',
@@ -124,12 +159,14 @@ export default function Layout({ children }) {
           padding: 40,
           textAlign: 'center'
         }}>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>Welcome to Klair</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#0d7377', marginBottom: 8, fontFamily: 'Georgia, serif', letterSpacing: '-0.02em' }}>Klair</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>Welcome</div>
           <p style={{ color: '#475569', lineHeight: 1.6, marginBottom: 28, fontSize: 14 }}>
             Get started by creating your first organization to manage invoices, customers, and revenue.
           </p>
           <button
-            onClick={() => navigate('/create-org')}
+            type="button"
+            onClick={handleCreateOrgClick}
             style={{
               display: 'inline-block',
               padding: '11px 24px',
@@ -142,12 +179,16 @@ export default function Layout({ children }) {
               fontWeight: 600,
               fontFamily: 'inherit',
               marginBottom: 16,
+              transition: 'background 0.15s',
             }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#14a0a5'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#0d7377'}
           >
             Create Organization
           </button>
           <button
-            onClick={handleLogout}
+            type="button"
+            onClick={handleLogoutClick}
             style={{
               display: 'block',
               width: '100%',
@@ -160,7 +201,10 @@ export default function Layout({ children }) {
               fontSize: 13,
               fontWeight: 500,
               fontFamily: 'inherit',
+              transition: 'background 0.15s',
             }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#e2e8f0'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#f1f5f9'}
           >
             Logout
           </button>

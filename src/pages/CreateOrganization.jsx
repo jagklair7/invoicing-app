@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../app/supabaseClient";
 import { useOrg } from "../context/OrgContext";
 import { useNavigate } from "react-router-dom";
@@ -7,18 +7,37 @@ export default function CreateOrganization() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
   const { switchOrg, refresh: refreshOrgs } = useOrg();
   const navigate = useNavigate();
 
+  // Check if user is authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getUser();
+      setIsAuthenticated(!!data?.user);
+    };
+    checkAuth();
+  }, []);
+
   const createOrg = async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setError("Organization name is required");
+      return;
+    }
 
     setLoading(true);
     setError("");
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user) throw new Error("Not authenticated");
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      
+      if (userErr || !userData?.user) {
+        setError("You must be logged in to create an organization");
+        navigate("/login");
+        return;
+      }
 
       // 1. Create organization
       const { data: org, error: orgErr } = await supabase
@@ -27,7 +46,7 @@ export default function CreateOrganization() {
         .select()
         .single();
 
-      if (orgErr) throw orgErr;
+      if (orgErr) throw new Error(orgErr.message || "Failed to create organization");
 
       // 2. Create organization settings
       const { error: settingsErr } = await supabase
@@ -38,7 +57,7 @@ export default function CreateOrganization() {
           invoice_prefix: "INV-",
         });
 
-      if (settingsErr) throw settingsErr;
+      if (settingsErr) throw new Error(settingsErr.message || "Failed to create settings");
 
       // 3. Add current user as super_admin member
       const { error: memberErr } = await supabase
@@ -49,7 +68,7 @@ export default function CreateOrganization() {
           role: "super_admin",
         });
 
-      if (memberErr) throw memberErr;
+      if (memberErr) throw new Error(memberErr.message || "Failed to add member");
 
       // 4. Switch to new org and refresh context
       const formatted = {
@@ -59,13 +78,15 @@ export default function CreateOrganization() {
       };
 
       switchOrg(formatted);
+      
+      // Refresh org context to ensure new org is reflected
       await refreshOrgs();
 
-      // Redirect
-      navigate("/");
+      // Redirect to dashboard
+      setTimeout(() => navigate("/"), 500);
 
     } catch (err) {
-      console.error(err);
+      console.error("Create org error:", err);
       setError(err.message || "Failed to create organization. Please try again.");
     } finally {
       setLoading(false);
