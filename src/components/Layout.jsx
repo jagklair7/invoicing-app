@@ -1,5 +1,5 @@
 // src/components/Layout.jsx
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 
@@ -114,11 +114,113 @@ function NavItem({ to, label, icon, end }) {
 // ── Main Layout ───────────────────────────────────────────────────────────────
 export default function Layout({ children }) {
   const navigate = useNavigate()
-  const { orgs, activeOrg, switchOrg, isSuperAdmin } = useOrg()
+  const location = useLocation()
+  const { orgs, activeOrg, switchOrg, isSuperAdmin, loading: orgLoading } = useOrg()
 
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/login')
+  }
+
+  // Show loading spinner while org context is loading
+  if (orgLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f8fafc' }}>
+        <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#0d7377', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    )
+  }
+
+  // Routes that should bypass the blank state check
+  const bypassBlankStateRoutes = ['/create-org', '/auth/callback', '/login', '/signup']
+  const shouldBypassBlankState = bypassBlankStateRoutes.includes(location.pathname)
+
+  // Show blank state only after loading is done and there are no orgs (and not on a bypass route)
+  if (!orgLoading && (!orgs || orgs.length === 0) && !shouldBypassBlankState) {
+    const handleCreateOrgClick = async () => {
+      try {
+        navigate('/create-org')
+      } catch (err) {
+        console.error('Navigation to /create-org failed:', err)
+        alert('Failed to navigate. Try refreshing the page.')
+      }
+    }
+
+    const handleLogoutClick = async () => {
+      try {
+        await supabase.auth.signOut()
+        navigate('/login')
+      } catch (err) {
+        console.error('Logout failed:', err)
+        alert('Logout failed. Try refreshing the page.')
+      }
+    }
+
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', padding: 20, background: '#f8fafc' }}>
+        <div style={{
+          maxWidth: 480,
+          width: '100%',
+          background: 'white',
+          borderRadius: 16,
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 10px 30px rgba(15,23,42,.08)',
+          padding: 40,
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#0d7377', marginBottom: 8, fontFamily: 'Georgia, serif', letterSpacing: '-0.02em' }}>Klair</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>Welcome</div>
+          <p style={{ color: '#475569', lineHeight: 1.6, marginBottom: 28, fontSize: 14 }}>
+            Get started by creating your first organization to manage invoices, customers, and revenue.
+          </p>
+          <button
+            type="button"
+            onClick={handleCreateOrgClick}
+            style={{
+              display: 'inline-block',
+              padding: '11px 24px',
+              background: '#0d7377',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              marginBottom: 16,
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#14a0a5'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#0d7377'}
+          >
+            Create Organization
+          </button>
+          <button
+            type="button"
+            onClick={handleLogoutClick}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '10px 18px',
+              background: '#f1f5f9',
+              color: '#475569',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#e2e8f0'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#f1f5f9'}
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -250,8 +352,23 @@ export default function Layout({ children }) {
           }}>
             <span style={{ color: '#0d7377' }}><BuildingIcon /></span>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#0d7377', lineHeight: 1.2, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {activeOrg.name}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#0d7377', lineHeight: 1.2, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeOrg.name}</span>
+                {activeOrg.role && (
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    padding: '2px 6px',
+                    borderRadius: 9999,
+                    background: activeOrg.role === 'super_admin' ? '#0d7377' : activeOrg.role === 'owner' ? '#fef3c7' : activeOrg.role === 'admin' ? '#e0e7ff' : '#d9f7ef',
+                    color: activeOrg.role === 'super_admin' ? '#fff' : activeOrg.role === 'owner' ? '#b45309' : activeOrg.role === 'admin' ? '#1e40af' : '#0f766e',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {activeOrg.role.replace('_', ' ')}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 10, color: '#5eadb0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Active org

@@ -953,7 +953,7 @@ export default function InvoiceView() {
 
                     <div style="text-align:center;margin:28px 0 24px;">
                         <a
-                          href="mailto:invoices@klair.ca"
+                          href="mailto:info@klair.ca"
                           style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
                         >
                           Contact us
