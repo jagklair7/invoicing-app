@@ -111,6 +111,64 @@ export default function Layout({ children }) {
     navigate('/login')
   }
 
+  if (!orgs || orgs.length === 0) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', padding: 20 }}>
+        <div style={{
+          maxWidth: 480,
+          width: '100%',
+          background: 'white',
+          borderRadius: 16,
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 10px 30px rgba(15,23,42,.08)',
+          padding: 40,
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: '#1e293b', marginBottom: 12 }}>Welcome to Klair</div>
+          <p style={{ color: '#475569', lineHeight: 1.6, marginBottom: 28, fontSize: 14 }}>
+            Get started by creating your first organization to manage invoices, customers, and revenue.
+          </p>
+          <button
+            onClick={() => navigate('/create-org')}
+            style={{
+              display: 'inline-block',
+              padding: '11px 24px',
+              background: '#0d7377',
+              color: 'white',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              marginBottom: 16,
+            }}
+          >
+            Create Organization
+          </button>
+          <button
+            onClick={handleLogout}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '10px 18px',
+              background: '#f1f5f9',
+              color: '#475569',
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+            }}
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50">
 
