@@ -312,8 +312,10 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
   const [history, setHistory]   = useState([])
   const [loadingH, setLoadingH] = useState(true)
 
-  const totalPaid    = history.reduce((s, p) => s + Number(p.amount), 0)
-  const balance      = Number(inv.total || 0) - totalPaid
+  const parseAmount = v => parseFloat(String(v || 0).replace(/[^0-9.]/g, '')) || 0
+
+  const totalPaid   = history.reduce((s, p) => s + parseAmount(p.amount), 0)
+  const balance     = parseAmount(inv.total) - totalPaid
   const isFullyPaid  = balance <= 0.005
 
   useEffect(() => { fetchHistory() }, [])
@@ -343,8 +345,9 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
       })
 
       // Update invoice status
-      const newPaid = totalPaid + Number(amount)
-      const newStatus = newPaid >= Number(inv.total) - 0.005 ? 'paid' : 'partial'
+     // console.log(inv.total, typeof inv.total)
+      const newPaid = totalPaid + parseAmount(amount)
+      const newStatus = newPaid >= parseAmount(inv.total) - 0.005 ? 'paid' : 'partial'
       await supabase.from('invoices')
         .update({ status: newStatus })
         .eq('id', inv.id).eq('org_id', orgId)

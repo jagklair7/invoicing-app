@@ -816,6 +816,7 @@ export default function InvoiceView() {
   const [editDue, setEditDue]       = useState('')
   const [editItems, setEditItems]   = useState([])
   const [editNotes, setEditNotes] = useState('')
+  const [products, setProducts] = useState([])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchInvoice() {
@@ -844,6 +845,13 @@ export default function InvoiceView() {
         .single()
 
       setOrgSettings(orgSettings || null)
+
+      const { data: productList } = await supabase
+        .from('products')
+        .select('id, name, description, unit_price')
+        .eq('org_id', activeOrg.orgId)
+        .order('name')
+      setProducts(productList || [])
 
       // Fetch line items separately ← this is the key fix
 
@@ -1039,6 +1047,7 @@ export default function InvoiceView() {
   function addItem() {
   setEditItems(prev => [...prev, { 
     id: `new-${Date.now()}`, 
+    product_id: '',
     name: '', 
     quantity: '', 
     unit_price: '',
@@ -1054,6 +1063,19 @@ export default function InvoiceView() {
   function updateItem(idx, field, val) {
     setEditItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it))
   }
+
+  function handleProductSelect(idx, productId) {
+  const product = products.find(p => p.id === productId)
+  setEditItems(prev => prev.map((it, i) => {
+    if (i !== idx) return it
+    return {
+      ...it,
+      product_id:  productId,
+      name:        product?.description || '',
+      unit_price:  product?.unit_price  || 0,
+    }
+  }))
+}
 
   function cancelEdit() {
     setEditItems(items)
@@ -1116,7 +1138,8 @@ async function saveChanges() {
         .from('invoice_items')
         .insert(validItems.map(i => ({
           invoice_id:     id,
-          org_id:         activeOrg.orgId,  // ← fix: orgId not Id
+          org_id:         activeOrg.orgId,
+          product_id:     i.product_id || null,
           name:           i.name.trim(),
           quantity:       Number(i.quantity),
           unit_price:     Number(i.unit_price) || 0,
@@ -1413,7 +1436,16 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
                           const lineTotal    = calcLineTotal(item)
                           return (
                             <tr key={item.id || i}>
-                              <td className="inv-item-name">{item.name}</td>
+                             <td>
+  {item.product_id && products.find(p => p.id === item.product_id) && (
+    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 2 }}>
+      {products.find(p => p.id === item.product_id)?.name}
+    </div>
+  )}
+  <div className="inv-item-name" style={{ color: item.product_id ? '#64748b' : '#1e293b' }}>
+    {item.name}
+  </div>
+</td>
                               <td className="inv-item-num">{item.quantity}</td>
                               <td className="inv-item-num">
                                 {fmt(item.unit_price)}
@@ -1542,105 +1574,112 @@ const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_ty
 
                 {/* Line items */}
                 <div>
-                  <div className="inv-items-header">
+                {/* <div className="inv-items-header">
                     <span className="inv-items-title">Line Items</span>
-                  </div>
+                  </div> */}
 
-                  <div className="inv-items-cols" style={{ display: 'grid', 
-                  gridTemplateColumns: hasAnyDiscount ? '1fr 70px 100px 110px 36px' : '1fr 70px 100px 36px', 
-                  gap: '8px' }}>
-                    <span className="inv-items-col-label">Description</span>
-                    <span className="inv-items-col-label inv-items-col-label--r">Qty</span>
-                    <span className="inv-items-col-label inv-items-col-label--r">Unit Price</span>
-                    <span className="inv-items-col-label inv-items-col-label--r">Discount</span>
-                    <span></span>
-                  </div>
+                  {/* Column headers */}
+<div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 70px 100px 110px 36px', gap: 8, marginBottom: 6, padding: '0 2px' }}>
+  <span className="inv-items-col-label">Product</span>
+  <span className="inv-items-col-label">Description</span>
+  <span className="inv-items-col-label inv-items-col-label--r">Qty</span>
+  <span className="inv-items-col-label inv-items-col-label--r">Unit Price</span>
+  <span className="inv-items-col-label inv-items-col-label--r">Discount</span>
+  <span />
+</div>
 
-                  {editItems.length === 0 && (
-                    <div className="inv-empty-items" style={{ marginBottom: 12 }}>
-                      No items yet — add one below.
-                    </div>
-                  )}
+{editItems.length === 0 && (
+  <div className="inv-empty-items" style={{ marginBottom: 12 }}>
+    No items yet — add one below.
+  </div>
+)}
 
-                  {editItems.map((item, idx) => {
-                    const lineSubtotal = (Number(item.quantity)||0) * (Number(item.unit_price)||0)
-                    const lineDiscount = calcLineDiscount(item)
-                    const lineTotal    = calcLineTotal(item)
-                    return (
-                      <div key={item.id || idx}>
-                        <div className="inv-item-row" style={{ gridTemplateColumns: '1fr 70px 100px 110px 36px', gap: '8px', marginBottom: '8px' }}>
-                          <textarea
-                            className="inv-item-input"
-                            placeholder="Item description"
-                            value={item.name}
-                            onChange={e => updateItem(idx, 'name', e.target.value)}
-                            rows={2}
-                            style={{ resize: 'vertical', minHeight: 36 }}
-                          />
-                          <input
-                            className="inv-item-input inv-item-input--num"
-                            type="number"
-                            placeholder="1"
-                            min="0"
-                            step="any"
-                            value={item.quantity}
-                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                          />
-                          <input
-                            className="inv-item-input inv-item-input--num"
-                            type="number"
-                            placeholder="0.00"
-                            min="0"
-                            step="any"
-                            value={item.unit_price}
-                            onChange={e => updateItem(idx, 'unit_price', e.target.value)}
-                          />
-                          {/* Discount — type selector + value input */}
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <select
-                              className="inv-item-input"
-                              style={{ width: 52, padding: '7px 4px', fontSize: 11 }}
-                              value={item.discount_type || 'none'}
-                              onChange={e => updateItem(idx, 'discount_type', e.target.value)}
-                            >
-                              <option value="none">—</option>
-                              <option value="percent">%</option>
-                              <option value="fixed">$</option>
-                            </select>
-                            {item.discount_type && item.discount_type !== 'none' && (
-                              <input
-                                className="inv-item-input inv-item-input--num"
-                                type="number"
-                                placeholder="0"
-                                min="0"
-                                step="any"
-                                style={{ width: 52 }}
-                                value={item.discount_value || ''}
-                                onChange={e => updateItem(idx, 'discount_value', e.target.value)}
-                              />
-                            )}
-                          </div>
-                          <button className="inv-item-del" onClick={() => removeItem(idx)} title="Remove">×</button>
-                        </div>
-                        {/* Show discount saving inline */}
-                        {lineDiscount > 0 && (
-                          <div style={{ 
-                            fontSize: 11, color: '#059669', paddingLeft: 4, paddingBottom: 4,
-                            display: 'flex', justifyContent: 'flex-end', paddingRight: 44,
-                            gap: 8
-                          }}>
-                            <span style={{ color: '#94a3b8', textDecoration: 'line-through' }}>
-                              {new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(lineSubtotal)}
-                            </span>
-                            <span>−{new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(lineDiscount)} saved</span>
-                            <span style={{ fontWeight: 600 }}>
-                              = {new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(lineTotal)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+{editItems.map((item, idx) => {
+  const lineSubtotal = (Number(item.quantity)||0) * (Number(item.unit_price)||0)
+  const lineDiscount = calcLineDiscount(item)
+  const lineTotal    = calcLineTotal(item)
+  return (
+    <div key={item.id || idx}>
+      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 70px 100px 110px 36px', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+        
+        {/* Product dropdown */}
+        <select
+          className="inv-item-input inv-select"
+          style={{ background: 'white' }}
+          value={item.product_id || ''}
+          onChange={e => handleProductSelect(idx, e.target.value)}
+        >
+          <option value="">Select…</option>
+          {products.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+
+        {/* Description */}
+        <input
+          className="inv-item-input"
+          placeholder="Description / detail"
+          value={item.name}
+          onChange={e => updateItem(idx, 'name', e.target.value)}
+          style={{ background: 'white' }}
+        />
+
+        {/* Qty */}
+        <input
+          className="inv-item-input inv-item-input--num"
+          type="number" placeholder="1" min="0" step="any"
+          value={item.quantity}
+          onChange={e => updateItem(idx, 'quantity', e.target.value)}
+          style={{ background: 'white' }}
+        />
+
+        {/* Unit Price */}
+        <input
+          className="inv-item-input inv-item-input--num"
+          type="number" placeholder="0.00" min="0" step="any"
+          value={item.unit_price}
+          onChange={e => updateItem(idx, 'unit_price', e.target.value)}
+          style={{ background: 'white' }}
+        />
+
+        {/* Discount */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <select
+            className="inv-item-input"
+            style={{ width: 52, padding: '7px 4px', fontSize: 11, background: 'white' }}
+            value={item.discount_type || 'none'}
+            onChange={e => updateItem(idx, 'discount_type', e.target.value)}
+          >
+            <option value="none">—</option>
+            <option value="percent">%</option>
+            <option value="fixed">$</option>
+          </select>
+          {item.discount_type && item.discount_type !== 'none' && (
+            <input
+              className="inv-item-input inv-item-input--num"
+              type="number" placeholder="0" min="0" step="any"
+              style={{ width: 52, background: 'white' }}
+              value={item.discount_value || ''}
+              onChange={e => updateItem(idx, 'discount_value', e.target.value)}
+            />
+          )}
+        </div>
+
+        {/* Delete */}
+        <button className="inv-item-del" onClick={() => removeItem(idx)} title="Remove">×</button>
+      </div>
+
+      {/* Discount savings row */}
+      {lineDiscount > 0 && (
+        <div style={{ fontSize: 11, color: '#059669', marginBottom: 4, display: 'flex', gap: 8, justifyContent: 'flex-end', paddingRight: 44 }}>
+          <span style={{ color: '#94a3b8', textDecoration: 'line-through' }}>{fmt(lineSubtotal)}</span>
+          <span>−{fmt(lineDiscount)} saved</span>
+          <span style={{ fontWeight: 600 }}>= {fmt(lineTotal)}</span>
+        </div>
+      )}
+    </div>
+  )
+})}
 
                   <button className="inv-add-item" onClick={addItem}>
                     + Add Line Item

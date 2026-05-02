@@ -5,11 +5,11 @@ import { supabase } from '../app/supabaseClient'
 const OrgContext = createContext()
 
 export function OrgProvider({ children }) {
-  const [orgs, setOrgs]           = useState([])   // all orgs user belongs to
-  const [activeOrg, setActiveOrg] = useState(null)  // currently selected org
-  const [settings, setSettings]   = useState(null)  // org_settings for activeOrg
+  const [orgs, setOrgs]                 = useState([])
+  const [activeOrg, setActiveOrg]       = useState(null)
+  const [settings, setSettings]         = useState(null)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-  const [loading, setLoading]     = useState(true)
+  const [loading, setLoading]           = useState(true)
 
   const loadOrgs = useCallback(async () => {
     setLoading(true)
@@ -19,53 +19,39 @@ export function OrgProvider({ children }) {
       setLoading(false); return
     }
 
-    // Check if super_admin or owner
-    const { data: memberships } = await supabase
-      .from('organization_members')
-      .select('org_id, role, organizations(id, name, owner_id)')
-      .eq('user_id', userData.user.id)
-
-    if (!memberships?.length) {
-      setOrgs([]); setActiveOrg(null); setSettings(null); setLoading(false); return
-    }
-
-    const superAdmin = memberships.some(m =>
-      m.role === 'super_admin' || m.role === 'owner'
-    )
+    // ── Check super admin from profiles only ──────────────────────────
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_super_admin')
+      .eq('id', userData.user.id)
+      .single()
+    const superAdmin = profile?.is_super_admin === true
     setIsSuperAdmin(superAdmin)
 
-    let allOrgs = memberships.map(m => ({
+    // ── Load ONLY orgs this user belongs to ───────────────────────────
+    const { data: memberships } = await supabase
+      .from('organization_members')
+      .select('org_id, role, organizations(id, name)')
+      .eq('user_id', userData.user.id)
+
+    const allOrgs = (memberships || []).map(m => ({
       orgId: m.org_id,
       name:  m.organizations?.name || 'Unknown',
       role:  m.role,
     }))
 
-    // Super admin: also load ALL organizations
-    if (superAdmin) {
-      const { data: allOrgsData } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .order('name')
-
-      if (allOrgsData) {
-        // Merge — keep role info for orgs already in memberships
-        const memberOrgIds = new Set(allOrgs.map(o => o.orgId))
-        const extra = allOrgsData
-          .filter(o => !memberOrgIds.has(o.id))
-          .map(o => ({ orgId: o.id, name: o.name, role: 'super_admin' }))
-        allOrgs = [...allOrgs, ...extra]
-      }
-    }
-
     setOrgs(allOrgs)
 
-    // Restore previously selected org from localStorage
-    const savedOrgId = localStorage.getItem('activeOrgId')
-    const saved = allOrgs.find(o => o.orgId === savedOrgId)
-    const selected = saved || allOrgs[0]
-    setActiveOrg(selected)
+    if (!allOrgs.length) {
+      setActiveOrg(null); setSettings(null)
+      setLoading(false); return
+    }
 
-    // Load settings for selected org
+    // Restore previously selected org
+    const savedOrgId = localStorage.getItem('activeOrgId')
+    const saved      = allOrgs.find(o => o.orgId === savedOrgId)
+    const selected   = saved || allOrgs[0]
+    setActiveOrg(selected)
     await loadSettings(selected.orgId)
     setLoading(false)
   }, [])
