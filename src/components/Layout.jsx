@@ -4,7 +4,85 @@ import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { useFeatureFlags } from '../hooks/useFeatureFlags'
 
-// ... keep all your existing icon components exactly as they are ...
+// ── SVG icons ────────────────────────────────────────────────────────────────
+const ProdIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+    <line x1="7" y1="7" x2="7.01" y2="7"/>
+  </svg>
+)
+function DashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".85"/>
+      <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
+      <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
+      <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".85"/>
+    </svg>
+  )
+}
+function CustIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="5" r="3" fill="currentColor" opacity=".85"/>
+      <path d="M2 13c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".85"/>
+    </svg>
+  )
+}
+function InvIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+function OrgIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="5" y="1" width="6" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <rect x="1" y="10" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <rect x="10" y="10" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M8 6v2.5M8 8.5H3.5V10M8 8.5H12.5V10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+function SetIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+function LogoutIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M10 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity=".85"/>
+    </svg>
+  )
+}
+function BuildingIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <rect x="1" y="4" width="14" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 15V9h6v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M4 1h8l1 3H3L4 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function AdminIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+
+// ── rest of the file continues as before...
 
 // ── NavItem ───────────────────────────────────────────────────────────────────
 function NavItem({ to, label, icon, end }) {
@@ -28,17 +106,6 @@ function NavItem({ to, label, icon, end }) {
         </>
       )}
     </NavLink>
-  )
-}
-
-// ── Admin nav icon ────────────────────────────────────────────────────────────
-function AdminIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
-      <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06"
-        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".6"/>
-    </svg>
   )
 }
 
