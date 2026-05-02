@@ -164,18 +164,19 @@ if (C.slate) {
   // "INVOICE" label — right side of header
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  setColor(doc, C.white)
+  setColor(doc, C.teal)
  // setColor(doc, C.gold) 
   doc.text('INVOICE', pw - mr, 16, { align: 'right' })
 
   // Invoice number under it
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  setColor(doc, [148, 163, 184])  // slate-400
+  //setColor(doc, [148, 163, 184])  // slate-400
+  setColor(doc, [232, 245, 245])
   doc.text('Invoice No.', pw - mr, 23, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
-  setColor(doc, C.white)
+  setColor(doc, C.teal)
   doc.text(invoice.number || '—', pw - mr, 29, { align: 'right' })
 
   // Status badge
