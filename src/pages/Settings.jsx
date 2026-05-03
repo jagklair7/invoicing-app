@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import { useNavigate } from 'react-router-dom'
 
 const css = `
   .settings-root {
@@ -47,9 +48,7 @@ const css = `
     flex-direction: column;
     gap: 5px;
   }
-  .settings-field--full {
-    grid-column: 1 / -1;
-  }
+  .settings-field--full { grid-column: 1 / -1; }
   .settings-label {
     font-size: 11px;
     font-weight: 600;
@@ -74,11 +73,7 @@ const css = `
     box-shadow: 0 0 0 3px rgba(13,115,119,0.1);
     background: white;
   }
-  .settings-hint {
-    font-size: 11px;
-    color: #94a3b8;
-    margin-top: 2px;
-  }
+  .settings-hint { font-size: 11px; color: #94a3b8; margin-top: 2px; }
   .settings-org-badge {
     display: inline-flex;
     align-items: center;
@@ -92,8 +87,6 @@ const css = `
     color: #0d7377;
     margin-bottom: 20px;
   }
-
-  /* Logo upload area */
   .logo-upload-area {
     border: 2px dashed #e2e8f0;
     border-radius: 12px;
@@ -150,7 +143,6 @@ const css = `
     animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   .settings-save-btn {
     display: flex;
     align-items: center;
@@ -184,6 +176,113 @@ const css = `
     font-weight: 500;
     margin-top: 12px;
   }
+  .danger-zone {
+    background: white;
+    border: 1.5px solid #fecaca;
+    border-radius: 14px;
+    padding: 28px;
+    margin-bottom: 20px;
+    margin-top: 12px;
+  }
+  .danger-zone-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #ef4444;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #fef2f2;
+  }
+  .danger-zone-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .danger-zone-info h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0 0 4px;
+  }
+  .danger-zone-info p {
+    font-size: 12px;
+    color: #94a3b8;
+    margin: 0;
+    line-height: 1.5;
+  }
+  .danger-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #ef4444;
+    background: #fff5f5;
+    border: 1.5px solid #fecaca;
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .danger-btn:hover { background: #fef2f2; border-color: #ef4444; }
+  .danger-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .confirm-dialog {
+    margin-top: 16px;
+    background: #fff5f5;
+    border: 1.5px solid #fecaca;
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .confirm-dialog p {
+    font-size: 13px;
+    color: #1e293b;
+    margin: 0 0 8px;
+    line-height: 1.5;
+  }
+  .confirm-dialog strong { color: #ef4444; }
+  .confirm-input {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: #1e293b;
+    background: white;
+    border: 1.5px solid #fecaca;
+    border-radius: 8px;
+    padding: 9px 12px;
+    outline: none;
+    width: 100%;
+    margin: 8px 0;
+    box-sizing: border-box;
+  }
+  .confirm-input:focus { border-color: #ef4444; }
+  .confirm-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .confirm-delete-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    background: #ef4444;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .confirm-delete-btn:hover { background: #dc2626; }
+  .confirm-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .confirm-cancel-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: #64748b;
+    background: white;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  .confirm-cancel-btn:hover { background: #f8fafc; }
   @media (max-width: 540px) {
     .settings-grid { grid-template-columns: 1fr; }
     .settings-field--full { grid-column: 1; }
@@ -191,8 +290,9 @@ const css = `
 `
 
 export default function Settings() {
-  const { activeOrg, refreshSettings } = useOrg()
+  const { activeOrg, refreshSettings, orgs, refresh } = useOrg()
   const fileInputRef = useRef(null)
+  const navigate = useNavigate()
 
   const [formData, setFormData] = useState({
     company_name:     '',
@@ -202,12 +302,17 @@ export default function Settings() {
     company_email:    '',
     company_logo_url: '',
     invoice_prefix:   'INV-',
-    gst_number:       '',   // ← NEW
+    gst_number:       '',
   })
-  const [loading,   setLoading]   = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [saving,    setSaving]    = useState(false)
-  const [saved,     setSaved]     = useState(false)
+  const [loading,      setLoading]      = useState(true)
+  const [uploading,    setUploading]    = useState(false)
+  const [saving,       setSaving]       = useState(false)
+  const [saved,        setSaved]        = useState(false)
+  const [showConfirm,  setShowConfirm]  = useState(false)
+  const [confirmText,  setConfirmText]  = useState('')
+  const [deleting,     setDeleting]     = useState(false)
+
+  const isOwner = activeOrg?.role === 'owner'
 
   useEffect(() => {
     if (activeOrg?.orgId) fetchSettings()
@@ -215,12 +320,11 @@ export default function Settings() {
 
   async function fetchSettings() {
     if (!activeOrg?.orgId) return
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('organization_settings')
       .select('*')
       .eq('org_id', activeOrg.orgId)
-      .single()
-
+      .maybeSingle()
     if (data) {
       setFormData(prev => ({
         ...prev,
@@ -254,7 +358,6 @@ export default function Settings() {
           invoice_prefix:   formData.invoice_prefix,
           gst_number:       formData.gst_number,
         }, { onConflict: 'org_id' })
-
       if (error) throw error
       await refreshSettings()
       setSaved(true)
@@ -289,6 +392,26 @@ export default function Settings() {
     }
   }
 
+  async function handleDeleteOrg() {
+    if (confirmText !== activeOrg?.name) return
+    setDeleting(true)
+    try {
+      const { error } = await supabase
+        .rpc('delete_organization', { org_id_input: activeOrg.orgId })
+      if (error) throw error
+      localStorage.removeItem('activeOrgId')
+      await refresh()
+      const remaining = orgs.filter(o => o.orgId !== activeOrg.orgId)
+      navigate(remaining.length > 0 ? '/' : '/onboarding', { replace: true })
+    } catch (err) {
+      alert('Failed to delete: ' + err.message)
+    } finally {
+      setDeleting(false)
+      setShowConfirm(false)
+      setConfirmText('')
+    }
+  }
+
   if (loading) return (
     <div style={{ padding: 40, color: '#94a3b8', fontSize: 13 }}>Loading settings…</div>
   )
@@ -300,14 +423,11 @@ export default function Settings() {
         <h1 className="settings-page-title">Settings</h1>
         <p className="settings-page-sub">Company info and tax details appear on every invoice and PDF export.</p>
 
-        {/* Active org badge */}
         {activeOrg && (
-          <div className="settings-org-badge">
-            🏢 {activeOrg.name}
-          </div>
+          <div className="settings-org-badge">🏢 {activeOrg.name}</div>
         )}
 
-        {/* ── Logo card ── */}
+        {/* ── Logo ── */}
         <div className="settings-card">
           <div className="settings-card-title">Company Logo</div>
           <input ref={fileInputRef} type="file" accept="image/*"
@@ -346,7 +466,7 @@ export default function Settings() {
           )}
         </div>
 
-        {/* ── Company info card ── */}
+        {/* ── Company info ── */}
         <div className="settings-card">
           <div className="settings-card-title">Company Information</div>
           <div className="settings-grid">
@@ -390,7 +510,7 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* ── Tax info card ── */}
+        {/* ── Tax ── */}
         <div className="settings-card">
           <div className="settings-card-title">Tax Information</div>
           <div className="settings-grid">
@@ -413,6 +533,52 @@ export default function Settings() {
             ✓ Settings saved — your next invoice and PDF export will use these details.
           </div>
         )}
+
+        {/* ── Danger Zone ── */}
+        {isOwner && (
+          <div className="danger-zone">
+            <div className="danger-zone-title">⚠ Danger Zone</div>
+            <div className="danger-zone-row">
+              <div className="danger-zone-info">
+                <h4>Delete Organization</h4>
+                <p>Permanently delete this organization and all its data —<br/>invoices, customers, products, and settings.</p>
+              </div>
+              <button className="danger-btn" onClick={() => setShowConfirm(true)} disabled={deleting}>
+                Delete Org
+              </button>
+            </div>
+
+            {showConfirm && (
+              <div className="confirm-dialog">
+                <p>This action <strong>cannot be undone</strong>. All invoices, customers, products and settings for <strong>{activeOrg?.name}</strong> will be permanently deleted.</p>
+                <p>Type <strong>{activeOrg?.name}</strong> to confirm:</p>
+                <input
+                  className="confirm-input"
+                  placeholder={activeOrg?.name}
+                  value={confirmText}
+                  onChange={e => setConfirmText(e.target.value)}
+                  autoFocus
+                />
+                <div className="confirm-actions">
+                  <button
+                    className="confirm-delete-btn"
+                    onClick={handleDeleteOrg}
+                    disabled={confirmText !== activeOrg?.name || deleting}
+                  >
+                    {deleting ? 'Deleting…' : 'Yes, delete everything'}
+                  </button>
+                  <button
+                    className="confirm-cancel-btn"
+                    onClick={() => { setShowConfirm(false); setConfirmText('') }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </>
   )

@@ -151,41 +151,27 @@ export default function Onboarding() {
     setError('')
 
     try {
-      const { data: userData } = await supabase.auth.getUser()
-      const userId = userData?.user?.id
-      if (!userId) throw new Error('Not authenticated.')
+  const { data: userData } = await supabase.auth.getUser()
+  const userId = userData?.user?.id
+  if (!userId) throw new Error('Not authenticated.')
 
-      // 1. Create the organization
-      const { data: org, error: orgErr } = await supabase
-        .from('organizations')
-        .insert({ name, owner_id: userId })
-        .select()
-        .single()
-      if (orgErr) throw orgErr
+  const { data, error: fnErr } = await supabase
+    .rpc('create_organization', { org_name: orgName.trim() })
+console.log('rpc data:', data)
+console.log('rpc error:', fnErr)
+  if (fnErr) throw fnErr
 
-      // 2. Add user as owner in organization_members
-      const { error: memErr } = await supabase
-        .from('organization_members')
-        .insert({ org_id: org.id, user_id: userId, role: 'owner' })
-      if (memErr) throw memErr
+  const org = typeof data === 'string' ? JSON.parse(data) : data
+console.log('parsed org:', org)
+  localStorage.setItem('activeOrgId', org.id)
+  await refresh()
+  navigate('/', { replace: true })
 
-      // 3. Create default org settings
-      await supabase
-        .from('organization_settings')
-        .insert({ org_id: org.id })
-
-      // 4. Save as active org
-      localStorage.setItem('activeOrgId', org.id)
-
-      // 5. Refresh org context then go to dashboard
-      await refresh()
-      navigate('/', { replace: true })
-
-    } catch (err) {
-      setError(err.message || 'Something went wrong.')
-    } finally {
-      setSaving(false)
-    }
+} catch (err) {
+  setError(err.message || 'Something went wrong.')
+} finally {
+  setSaving(false)
+}
   }
 
   async function handleSignOut() {

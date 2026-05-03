@@ -31,66 +31,27 @@ export default function CreateOrganization() {
     setError("");
 
     try {
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      
-      if (userErr || !userData?.user) {
-        setError("You must be logged in to create an organization");
-        navigate("/login");
-        return;
-      }
+  const { data: userData } = await supabase.auth.getUser()
+  const userId = userData?.user?.id
+  if (!userId) { navigate('/login'); return }
 
-      // 1. Create organization
-      const { data: org, error: orgErr } = await supabase
-        .from("organizations")
-        .insert({ name: name.trim(), owner_id: userData.user.id })
-        .select()
-        .single();
+  const { data, error: fnErr } = await supabase
+    .rpc('create_organization', { org_name: name.trim() })
+  if (fnErr) throw new Error(fnErr.message)
 
-      if (orgErr) throw new Error(orgErr.message || "Failed to create organization");
+  const org = typeof data === 'string' ? JSON.parse(data) : data
 
-      // 2. Create organization settings
-      const { error: settingsErr } = await supabase
-        .from("organization_settings")
-        .insert({
-          org_id: org.id,
-          company_name: name.trim(),
-          invoice_prefix: "INV-",
-        });
+  const formatted = { orgId: org.id, name: org.name, role: 'owner' }
+  switchOrg(formatted)
+  await refreshOrgs()
+  navigate('/')
 
-      if (settingsErr) throw new Error(settingsErr.message || "Failed to create settings");
-
-      // 3. Add current user as super_admin member
-      const { error: memberErr } = await supabase
-        .from("organization_members")
-        .insert({
-          org_id: org.id,
-          user_id: userData.user.id,
-          role: "super_admin",
-        });
-
-      if (memberErr) throw new Error(memberErr.message || "Failed to add member");
-
-      // 4. Switch to new org and refresh context
-      const formatted = {
-        orgId: org.id,
-        name: org.name,
-        role: "super_admin"
-      };
-
-      switchOrg(formatted);
-      
-      // Refresh org context to ensure new org is reflected
-      await refreshOrgs();
-
-      // Redirect to dashboard
-      setTimeout(() => navigate("/"), 500);
-
-    } catch (err) {
-      console.error("Create org error:", err);
-      setError(err.message || "Failed to create organization. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+} catch (err) {
+  console.error('Create org error:', err)
+  setError(err.message || 'Failed to create organization. Please try again.')
+} finally {
+  setLoading(false)
+}
   };
 
   return (
