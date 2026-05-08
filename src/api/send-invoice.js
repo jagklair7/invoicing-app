@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
 
     const response = await resend.emails.send({
-      from: process.env.EMAIL_FROM,
+      from: 'Klair Computer Inc. <' + process.env.EMAIL_FROM + '>',
       to,
       subject: subject || 'Invoice from Klair Computer Inc.',
       html: `
