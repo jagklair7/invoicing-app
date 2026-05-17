@@ -322,6 +322,7 @@ export default function Dashboard() {
   const [overdue, setOverdue]       = useState([])
   const [chartData, setChartData]   = useState([])
   const [bizName, setBizName]       = useState('Klair Computer Inc.')
+  const [billingData, setBillingData] = useState([])
 
  // useEffect(() => { fetchAll() }, [])
 
@@ -377,6 +378,23 @@ export default function Dashboard() {
 
       // ── Recent invoices (last 6) ──
       setRecent(invoices.slice(0, 6))
+
+      // ── Monthly billing table (all invoices, not just paid) ──
+      const billingMonths = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
+        return { month: d.getMonth(), year: d.getFullYear(), label: MONTHS[d.getMonth()], billed: 0, paid: 0, outstanding: 0 }
+      })
+      invoices
+        .filter(i => i.date)
+        .forEach(i => {
+          const d = new Date(i.date)
+          const slot = billingMonths.find(m => m.month === d.getMonth() && m.year === d.getFullYear())
+          if (!slot) return
+          slot.billed += Number(i.total || 0)
+          if (i.status === 'paid') slot.paid += Number(i.total || 0)
+          if (i.status === 'sent') slot.outstanding += Number(i.total || 0)
+        })
+      setBillingData(billingMonths)
 
       // ── Overdue: sent invoices past due_date ──
       const today = new Date()
@@ -552,6 +570,61 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+        
+        {/* ── Monthly Billing Table ── */}
+<div style={{ maxWidth: 1100, margin: '0 auto 20px' }}>
+  <div className="dash-panel">
+    <div className="dash-panel-header">
+      <span className="dash-panel-title">Monthly Billing — Last 6 Months</span>
+    </div>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead>
+        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+          {['Month', 'Total Billed', 'Collected', 'Outstanding', ''].map((h, i) => (
+            <th key={i} style={{ padding: '8px 20px', textAlign: i === 0 ? 'left' : 'right', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--slate-lt)' }}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {billingData.map((m, i) => {
+          const prev = billingData[i - 1]
+          const pct = prev?.billed > 0 ? Math.round(Math.abs(m.billed - prev.billed) / prev.billed * 100) : null
+          const trend = prev ? (m.billed > prev.billed ? '↑' : m.billed < prev.billed ? '↓' : '—') : null
+          const trendColor = trend === '↑' ? 'var(--green)' : trend === '↓' ? 'var(--red)' : 'var(--slate-lt)'
+          const maxBilled = Math.max(...billingData.map(b => b.billed), 1)
+          return (
+            <tr key={i} style={{ borderBottom: '1px solid #f8fafc', cursor: 'default' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <td style={{ padding: '10px 20px', fontWeight: 500, color: 'var(--slate)' }}>
+                {m.label} {trend && <span style={{ fontSize: 11, color: trendColor, marginLeft: 4 }}>{trend}{pct != null ? ` ${pct}%` : ''}</span>}
+              </td>
+              <td style={{ padding: '10px 20px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(m.billed)}</td>
+              <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>{fmt(m.paid)}</td>
+              <td style={{ padding: '10px 20px', textAlign: 'right', color: m.outstanding > 0 ? 'var(--amber)' : 'var(--slate-lt)', fontVariantNumeric: 'tabular-nums' }}>
+                {m.outstanding > 0 ? fmt(m.outstanding) : '—'}
+              </td>
+              <td style={{ padding: '10px 20px', width: 80 }}>
+                <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.round(m.billed / maxBilled * 100)}%`, background: 'var(--teal)', borderRadius: 3 }} />
+                </div>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+      <tfoot>
+        <tr style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+          <td style={{ padding: '10px 20px', fontWeight: 600, color: 'var(--slate)' }}>6-month total</td>
+          <td style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(billingData.reduce((s, m) => s + m.billed, 0))}</td>
+          <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--green)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(billingData.reduce((s, m) => s + m.paid, 0))}</td>
+          <td style={{ padding: '10px 20px', textAlign: 'right', color: 'var(--amber)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmt(billingData.reduce((s, m) => s + m.outstanding, 0))}</td>
+          <td />
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
 
         {/* ── Recent invoices ── */}
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>

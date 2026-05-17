@@ -7,8 +7,10 @@ import { useOrg } from '../context/OrgContext'
 export default function InvoiceForm() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const isNew = !id
   const { activeOrg } = useOrg()
-
+  
+  const DRAFT_KEY = 'invoice_draft'
   const [customers, setCustomers] = useState([])
   const [products, setProducts]   = useState([])
   const [saving, setSaving]       = useState(false)
@@ -37,6 +39,24 @@ export default function InvoiceForm() {
       .order('name')
       .then(({ data }) => setProducts(data || []))
   }, [activeOrg?.orgId])
+
+  // Save whenever form state changes
+ // Restore draft on mount (new invoices only)
+useEffect(() => {
+  if (!isNew) return
+  const saved = localStorage.getItem(DRAFT_KEY)
+  if (!saved) return
+  try {
+    const d = JSON.parse(saved)
+    if (d.invoice) setInvoice(prev => ({ ...prev, ...d.invoice }))
+    if (d.items?.length) setItems(d.items)
+  } catch {}
+}, []) // runs once on mount
+
+  useEffect(() => {
+  if (!isNew) return
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({ invoice, items }))
+}, [invoice, items])
 
   // Auto-generate invoice number scoped to org
   useEffect(() => {
@@ -121,7 +141,7 @@ export default function InvoiceForm() {
           })))
         if (itemErr) throw itemErr
       }
-
+      localStorage.removeItem(DRAFT_KEY)    
       navigate(`/invoices/${inv.id}`)
     } catch (err) {
       alert('Error saving invoice: ' + err.message)
