@@ -303,7 +303,6 @@ const css = `
 `
 
 const fmt = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function greetingTime() {
   const h = new Date().getHours()
@@ -335,100 +334,99 @@ export default function Dashboard() {
     }
   }, [activeOrg?.orgId, orgLoading])
 
-  async function fetchAll() {
-    setLoading(true)
-    try {
-      const [invRes, custRes, settingsRes] = await Promise.all([
-        supabase.from('invoices').select('*, customers(name)')
-        .eq('org_id', activeOrg.orgId)          // ← scoped
+async function fetchAll() {
+  setLoading(true)
+  const now = new Date()
+  try {
+    const [invRes, custRes, settingsRes] = await Promise.all([
+      supabase.from('invoices').select('*, customers(name)')
+        .eq('org_id', activeOrg.orgId)
         .order('created_at', { ascending: false }),
-        supabase.from('customers').select('id')
-        .eq('org_id', activeOrg.orgId),          // ← scoped
-      
-       // supabase.from('settings').select('key, value')
-       supabase
-          .from('organization_settings')           // ← correct table
-          .select('company_name')
-          .eq('org_id', activeOrg.orgId)
-          .single()
-      ])
+      supabase.from('customers').select('id')
+        .eq('org_id', activeOrg.orgId),
+      supabase.from('organization_settings')
+        .select('company_name')
+        .eq('org_id', activeOrg.orgId)
+        .single()
+    ])
 
-      const invoices   = invRes.data   || []
-      const customers  = custRes.data  || []
+    const invoices  = invRes.data  || []
+    const customers = custRes.data || []
 
-    //  if (settingsRes.data?.business_name) setBizName(settingsRes.data.business_name)
-    // Use org settings for biz name, fall back to org name
-      setBizName(settingsRes.data?.company_name || activeOrg.name || '')
+    setBizName(settingsRes.data?.company_name || activeOrg.name || '')
 
-      // ── Stats ──
-      const paid        = invoices.filter(i => i.status === 'paid')
-      const sent        = invoices.filter(i => i.status === 'sent')
-      const draft       = invoices.filter(i => i.status === 'draft')
-      const paidTotal   = paid.reduce((s, i) => s + Number(i.total || 0), 0)
-      const outTotal    = sent.reduce((s, i) => s + Number(i.total || 0), 0)
+    // ── Stats ──
+    const paid      = invoices.filter(i => i.status === 'paid')
+    const sent      = invoices.filter(i => i.status === 'sent')
+    const draft     = invoices.filter(i => i.status === 'draft')
+    const paidTotal = paid.reduce((s, i) => s + Number(i.total || 0), 0)
+    const outTotal  = sent.reduce((s, i) => s + Number(i.total || 0), 0)
 
-      setStats({
-        total:       invoices.length,
-        paid:        paidTotal,
-        outstanding: outTotal,
-        customers:   customers.length,
-        draft:       draft.length,
-        sent:        sent.length,
+    setStats({
+      total:       invoices.length,
+      paid:        paidTotal,
+      outstanding: outTotal,
+      customers:   customers.length,
+      draft:       draft.length,
+      sent:        sent.length,
+    })
+
+    // ── Recent invoices ──
+    setRecent(invoices.slice(0, 6))
+
+    // ── Overdue ──
+    const todayDate = new Date()
+    todayDate.setHours(0, 0, 0, 0)
+    const od = invoices
+      .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < todayDate)
+      .map(i => ({
+        ...i,
+        daysOverdue: Math.floor((todayDate - new Date(i.due_date)) / 86400000)
+      }))
+      .sort((a, b) => b.daysOverdue - a.daysOverdue)
+    setOverdue(od)
+
+    // ── Revenue chart (paid only) ──
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+    // ── Revenue chart ──
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 5 + i, 1))
+      return { month: d.getUTCMonth(), year: d.getUTCFullYear(), label: MONTH_NAMES[d.getUTCMonth()], total: 0 }
+    })
+    invoices
+      .filter(i => i.status === 'paid' && i.date)
+      .forEach(i => {
+        const d = new Date(i.date + 'T00:00:00Z')
+        const slot = months.find(m => m.month === d.getUTCMonth() && m.year === d.getUTCFullYear())
+        if (slot) slot.total += Number(i.total || 0)
       })
+    setChartData(months)
 
-      // ── Recent invoices (last 6) ──
-      setRecent(invoices.slice(0, 6))
-
-      // ── Monthly billing table (all invoices, not just paid) ──
-      const billingMonths = Array.from({ length: 6 }, (_, i) => {
-        const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-        return { month: d.getMonth(), year: d.getFullYear(), label: MONTHS[d.getMonth()], billed: 0, paid: 0, outstanding: 0 }
+    // ── Monthly billing ──
+    const billingMonths = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 5 + i, 1))
+      return { month: d.getUTCMonth(), year: d.getUTCFullYear(), label: MONTH_NAMES[d.getUTCMonth()], billed: 0, paid: 0, outstanding: 0 }
+    })
+    invoices
+      .filter(i => i.date)
+      .forEach(i => {
+        const d = new Date(i.date + 'T00:00:00Z')
+        const slot = billingMonths.find(m => m.month === d.getUTCMonth() && m.year === d.getUTCFullYear())
+        if (!slot) return
+        slot.billed += Number(i.total || 0)
+        if (i.status === 'paid')    slot.paid        += Number(i.total || 0)
+        if (i.status === 'sent')    slot.outstanding += Number(i.total || 0)
+        if (i.status === 'partial') slot.outstanding += Number(i.total || 0)
       })
-      invoices
-        .filter(i => i.date)
-        .forEach(i => {
-          const d = new Date(i.date)
-          const slot = billingMonths.find(m => m.month === d.getMonth() && m.year === d.getFullYear())
-          if (!slot) return
-          slot.billed += Number(i.total || 0)
-          if (i.status === 'paid') slot.paid += Number(i.total || 0)
-          if (i.status === 'sent') slot.outstanding += Number(i.total || 0)
-        })
-      setBillingData(billingMonths)
+    setBillingData(billingMonths)
 
-      // ── Overdue: sent invoices past due_date ──
-      const today = new Date()
-      today.setHours(0,0,0,0)
-      const od = invoices
-        .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
-        .map(i => ({
-          ...i,
-          daysOverdue: Math.floor((today - new Date(i.due_date)) / 86400000)
-        }))
-        .sort((a, b) => b.daysOverdue - a.daysOverdue)
-      setOverdue(od)
-
-      // ── Chart: revenue by month (last 6 months) ──
-      const now = new Date()
-      const months = Array.from({ length: 6 }, (_, i) => {
-        const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1)
-        return { month: d.getMonth(), year: d.getFullYear(), label: MONTHS[d.getMonth()], total: 0 }
-      })
-      invoices
-        .filter(i => i.status === 'paid' && i.date)
-        .forEach(i => {
-          const d = new Date(i.date)
-          const slot = months.find(m => m.month === d.getMonth() && m.year === d.getFullYear())
-          if (slot) slot.total += Number(i.total || 0)
-        })
-      setChartData(months)
-
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
     }
-  }
 
   const chartMax = Math.max(...chartData.map(m => m.total), 1)
 

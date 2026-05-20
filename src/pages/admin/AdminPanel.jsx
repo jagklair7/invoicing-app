@@ -65,6 +65,90 @@ const css = `
   border-bottom-color: #0d7377;
 }
 
+.admin-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.admin-plan-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s, background 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-plan-card:hover {
+  transform: translateY(-2px);
+  border-color: #0d7377;
+}
+
+.admin-plan-card--selected {
+  background: #0d7377;
+  border-color: #0d7377;
+  color: white;
+}
+
+.admin-plan-card--selected .admin-plan-card-price,
+.admin-plan-card--selected .admin-plan-card-meta {
+  color: rgba(255,255,255,0.85);
+}
+
+.admin-plan-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.admin-plan-card-price {
+  font-size: 14px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.admin-plan-card-meta {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.admin-package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.admin-package-option-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 18px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-package-option-card h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-package-option-card p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
 .admin-section-title {
   font-size: 13px;
   font-weight: 600;
@@ -180,6 +264,36 @@ const css = `
   font-size: 14px;
 }
 
+.admin-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #0d7377;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.admin-button:hover {
+  background: #f1f5f9;
+}
+
+.admin-button--selected {
+  background: #0d7377;
+  color: white;
+  border-color: #0d7377;
+}
+
+.admin-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .admin-saving {
   font-size: 12px;
   color: #0d7377;
@@ -187,14 +301,27 @@ const css = `
 }
 `
 
+const PLAN_FEATURES = [
+  { key: 'payroll', label: 'Payroll' },
+  { key: 'pay_stub_pdf', label: 'Pay stub PDF' },
+  { key: 'ytd', label: 'YTD tracking' },
+  { key: 't4', label: 'T4 data' },
+  { key: 'multi_org', label: 'Multi-org' },
+]
+
 export default function AdminPanel() {
   const { isSuperAdmin } = useOrg()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('global') // 'global' | 'orgs'
+  const [tab, setTab] = useState('global') // 'global' | 'plans' | 'orgs'
 
   // Global flags
   const [flags, setFlags]   = useState([])
   const [saving, setSaving] = useState(null) // flag key being saved
+
+  // Plans and plan-based feature control
+  const [plans, setPlans] = useState([])
+  const [planSaving, setPlanSaving] = useState(null)
+  const [selectedPlanId, setSelectedPlanId] = useState(null)
 
   // Per-org overrides
   const [orgs, setOrgs]           = useState([])
@@ -204,12 +331,19 @@ export default function AdminPanel() {
   useEffect(() => {
     if (!isSuperAdmin) { navigate('/'); return }
     fetchFlags()
+    fetchPlans()
     fetchOrgs()
   }, [isSuperAdmin])
 
   useEffect(() => {
     if (selectedOrg) fetchOverrides(selectedOrg)
   }, [selectedOrg])
+
+  useEffect(() => {
+    if (plans.length && !selectedPlanId) {
+      setSelectedPlanId(plans[0].id)
+    }
+  }, [plans, selectedPlanId])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -228,6 +362,33 @@ export default function AdminPanel() {
       .order('name')
     setOrgs(data || [])
     if (data?.length) setSelectedOrg(data[0].id)
+  }
+
+  async function fetchPlans() {
+    const { data } = await supabase
+      .from('plans')
+      .select('*')
+      .order('price_monthly', { ascending: true })
+    setPlans(data || [])
+  }
+
+  const selectedPlan = plans.find(plan => plan.id === selectedPlanId) || plans[0] || null
+
+  async function togglePlanFeature(plan, featureKey) {
+    setPlanSaving(`${plan.id}:${featureKey}`)
+    const updatedFeatures = {
+      ...(plan.features || {}),
+      [featureKey]: !plan.features?.[featureKey],
+    }
+    const { error } = await supabase
+      .from('plans')
+      .update({ features: updatedFeatures })
+      .eq('id', plan.id)
+    if (error) {
+      console.error('Update plan feature error:', error)
+    }
+    await fetchPlans()
+    setPlanSaving(null)
   }
 
   async function fetchOverrides(orgId) {
@@ -316,6 +477,12 @@ export default function AdminPanel() {
             Global Feature Flags
           </button>
           <button
+            className={`admin-tab ${tab === 'plans' ? 'admin-tab--active' : ''}`}
+            onClick={() => setTab('plans')}
+          >
+            Plans
+          </button>
+          <button
             className={`admin-tab ${tab === 'orgs' ? 'admin-tab--active' : ''}`}
             onClick={() => setTab('orgs')}
           >
@@ -347,6 +514,76 @@ export default function AdminPanel() {
                   </label>
                 </div>
               ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Plan feature control ── */}
+        {tab === 'plans' && (
+          <>
+            <div className="admin-section-title">Plan Feature Controls</div>
+            <div className="admin-card">
+              {plans.length === 0 && (
+                <div className="admin-empty">
+                  No plans found.
+                  <div style={{ marginTop: 16 }}>
+                    <button
+                      className="admin-button"
+                      onClick={() => navigate('/admin/seed-plans')}
+                    >
+                      Create default plan tiers
+                    </button>
+                  </div>
+                </div>
+              )}
+              {plans.length > 0 && (
+                <>
+                  <div className="admin-plan-grid">
+                    {plans.map(plan => (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        onClick={() => setSelectedPlanId(plan.id)}
+                        className={`admin-plan-card ${selectedPlanId === plan.id ? 'admin-plan-card--selected' : ''}`}
+                      >
+                        <div className="admin-plan-card-title">{plan.name}</div>
+                        <div className="admin-plan-card-price">${plan.price_monthly}/mo</div>
+                        <div className="admin-plan-card-meta">{plan.max_employees === -1 ? 'Unlimited employees' : `${plan.max_employees} employees`}</div>
+                        <div className="admin-plan-card-meta">{plan.max_invoices === -1 ? 'Unlimited invoices' : `${plan.max_invoices} invoices`}</div>
+                        <div className="admin-plan-card-meta">{plan.max_orgs === -1 ? 'Unlimited orgs' : `${plan.max_orgs} orgs`}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedPlan && (
+                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 22 }}>
+                      <div className="admin-flag-label" style={{ marginBottom: 14 }}>{selectedPlan.name} package options</div>
+                      <div className="admin-package-grid">
+                        {PLAN_FEATURES.map(feature => {
+                          const enabled = !!selectedPlan.features?.[feature.key]
+                          return (
+                            <div key={feature.key} className="admin-package-option-card">
+                              <div>
+                                <h4>{feature.label}</h4>
+                                <p>{feature.key}</p>
+                              </div>
+                              <label className="admin-toggle">
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  onChange={() => togglePlanFeature(selectedPlan, feature.key)}
+                                  disabled={planSaving === `${selectedPlan.id}:${feature.key}`}
+                                />
+                                <span className="admin-toggle-slider" />
+                              </label>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </>
         )}

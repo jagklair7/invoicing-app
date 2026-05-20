@@ -15,10 +15,14 @@ import AuthCallback      from './pages/AuthCallback.jsx'
 import Settings          from './pages/Settings.jsx'
 import Dashboard         from './pages/Dashboard.jsx'
 import ProductsPage      from './pages/ProductsPage'
+import Employees         from './pages/Employees.jsx'
+import Payroll           from './pages/Payroll.jsx'
 import CustomerStatement from './pages/CustomerStatement.jsx'
 import CreateOrganization from './pages/CreateOrganization.jsx'
 import Onboarding        from './pages/Onboarding.jsx'
 import AdminPanel        from './pages/admin/AdminPanel.jsx'
+import Organizations     from './pages/admin/Organizations.jsx'
+import SeedPlans         from './pages/admin/SeedPlans.jsx'
 import { OrgProvider, useOrg } from './context/OrgContext'
 import OrgSwitcher       from './components/OrgSwitcher.jsx'
 
@@ -99,6 +103,9 @@ export default function App() {
           <Route path="/admin" element={
             <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
           } />
+          <Route path="/admin/seed-plans" element={
+            <SuperAdminRoute session={session}><SeedPlans /></SuperAdminRoute>
+          } />
           <Route path="/admin/*" element={
             <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
           } />
@@ -127,6 +134,15 @@ export default function App() {
           } />
           <Route path="/products" element={
             <OrgGuard session={session}><ProductsPage /></OrgGuard>
+          } />
+          <Route path="/employees" element={
+            <OrgGuard session={session}><Employees /></OrgGuard>
+          } />
+          <Route path="/payroll" element={
+            <OrgGuard session={session}><Payroll /></OrgGuard>
+          } />
+          <Route path="/organizations" element={
+            <SuperAdminRoute session={session}><Organizations /></SuperAdminRoute>
           } />
 
           {/* ── Catch-all ────────────────────────────────────────────── */}

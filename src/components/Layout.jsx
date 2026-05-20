@@ -38,6 +38,25 @@ function InvIcon() {
     </svg>
   )
 }
+function EmpIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M4.5 12c0-1.933 1.567-3.5 3.5-3.5s3.5 1.567 3.5 3.5" stroke="currentColor" strokeWidth="1.5" opacity=".6"/>
+      <path d="M2 14c0-2.5 2-4.5 6-4.5s6 2 6 4.5" stroke="currentColor" strokeWidth="1.5" opacity=".4"/>
+    </svg>
+  )
+}
+function PayIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="4" width="12" height="8" rx="2" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M4 6h8M4 10h8" stroke="currentColor" strokeWidth="1.2" opacity=".6"/>
+      <path d="M8 3v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".85"/>
+      <path d="M8 11v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".85"/>
+    </svg>
+  )
+}
 function OrgIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -241,11 +260,13 @@ export default function Layout({ children }) {
           {flags.customers !== false && (
             <NavItem to="/customers" label="Customers" icon={<CustIcon />} />
           )}
-          {flags.invoices !== false && (
-            <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
-          )}
           {flags.products !== false && (
             <NavItem to="/products" label="Products" icon={<ProdIcon />} />
+          )}
+          <NavItem to="/employees" label="Employees" icon={<EmpIcon />} />
+          <NavItem to="/payroll" label="Payroll" icon={<PayIcon />} />
+          {flags.invoices !== false && (
+            <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
           )}
         </nav>
 

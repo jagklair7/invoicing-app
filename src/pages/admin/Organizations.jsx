@@ -264,6 +264,11 @@ export default function Organizations() {
   const [expandedId, setExpandedId] = useState(null)
   const [members, setMembers]       = useState({}) // orgId -> members[]
   const [stats, setStats]           = useState({}) // orgId -> {invoices, customers}
+  const [plans, setPlans] = useState([])
+  const [orgSubscriptions, setOrgSubscriptions] = useState({}) // orgId -> subscription row
+  const [planSelection, setPlanSelection] = useState({})
+  const [planUpdating, setPlanUpdating] = useState({})
+  const [planMessage, setPlanMessage] = useState({})
 
   // New org form
   const [newOrgName, setNewOrgName]   = useState('')
@@ -292,20 +297,23 @@ export default function Organizations() {
 
   async function fetchOrgs() {
     setLoading(true)
-    const { data } = await supabase
-      .from('organizations')
-      .select('id, name, owner_id, created_at')
-      .order('created_at', { ascending: false })
-    setOrgs(data || [])
+    const [{ data: orgData }, { data: planData }, { data: subscriptionData }] = await Promise.all([
+      supabase.from('organizations').select('id, name, owner_id, created_at').order('created_at', { ascending: false }),
+      supabase.from('plans').select('id, name, price_monthly, features').order('price_monthly', { ascending: true }),
+      supabase.from('org_subscriptions').select('org_id, plan_id, status, plan:plan_id(name, price_monthly, features)')
+    ])
 
-    // Fetch stats for all orgs
-    if (data?.length) {
+    setOrgs(orgData || [])
+    setPlans(planData || [])
+    setOrgSubscriptions(Object.fromEntries((subscriptionData || []).map(s => [s.org_id, s])))
+
+    if (orgData?.length) {
       const [invRes, custRes] = await Promise.all([
         supabase.from('invoices').select('org_id, total, status'),
         supabase.from('customers').select('org_id'),
       ])
       const statsMap = {}
-      data.forEach(o => {
+      orgData.forEach(o => {
         const invs = invRes.data?.filter(i => i.org_id === o.id) || []
         statsMap[o.id] = {
           invoices:  invs.length,
@@ -324,6 +332,39 @@ export default function Organizations() {
       .select('user_id, role, profiles(email, full_name)')
       .eq('org_id', orgId)
     setMembers(prev => ({ ...prev, [orgId]: data || [] }))
+  }
+
+  async function handlePlanChange(orgId) {
+    const selectedPlanId = planSelection[orgId] || orgSubscriptions[orgId]?.plan_id
+    if (!selectedPlanId) return
+
+    setPlanUpdating(prev => ({ ...prev, [orgId]: true }))
+    setPlanMessage(prev => ({ ...prev, [orgId]: '' }))
+
+    try {
+      const subscription = orgSubscriptions[orgId]
+      const payload = { plan_id: selectedPlanId }
+
+      if (subscription) {
+        const { error } = await supabase.from('org_subscriptions')
+          .update(payload)
+          .eq('org_id', orgId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('org_subscriptions')
+          .insert({ org_id: orgId, ...payload })
+        if (error) throw error
+      }
+
+      await fetchOrgs()
+      await refreshOrgs()
+      setPlanMessage(prev => ({ ...prev, [orgId]: 'Plan updated successfully.' }))
+      setTimeout(() => setPlanMessage(prev => ({ ...prev, [orgId]: '' })), 4000)
+    } catch (err) {
+      setPlanMessage(prev => ({ ...prev, [orgId]: err.message || 'Unable to update plan.' }))
+    } finally {
+      setPlanUpdating(prev => ({ ...prev, [orgId]: false }))
+    }
   }
 
   function toggleExpand(orgId) {
@@ -359,7 +400,21 @@ export default function Organizations() {
         invoice_prefix: 'INV-',
       })
 
-      // 3. Add current user as super_admin member
+      // 3. Add the organization to the free plan by default
+      const { data: freePlan } = await supabase
+        .from('plans')
+        .select('id')
+        .eq('name', 'free')
+        .single()
+
+      if (freePlan?.id) {
+        await supabase.from('org_subscriptions').insert({
+          org_id: org.id,
+          plan_id: freePlan.id,
+        })
+      }
+
+      // 4. Add current user as super_admin member
       await supabase.from('organization_members').insert({
         org_id:  org.id,
         user_id: userData.user.id,
@@ -442,6 +497,13 @@ export default function Organizations() {
 
   const fmt = n => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
 
+  const formatPlanSummary = (plan) => {
+    if (!plan) return 'free'
+    const employees = plan.max_employees === -1 ? 'Unlimited' : plan.max_employees
+    const invoices = plan.max_invoices === -1 ? 'Unlimited' : plan.max_invoices
+    return `${plan.name} — $${plan.price_monthly}/mo · ${employees} employees · ${invoices} invoices`
+  }
+
   if (!isSuperAdmin) return null
 
   return (
@@ -513,6 +575,8 @@ export default function Organizations() {
                         <div className="orgs-card-name">{org.name}</div>
                         <div className="orgs-card-meta">
                           Created {new Date(org.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                          {' • '}
+                          <strong>Plan:</strong> {formatPlanSummary(orgSubscriptions[org.id]?.plan)}
                         </div>
                       </div>
                     </div>
@@ -553,6 +617,36 @@ export default function Organizations() {
                           </div>
                         </div>
                       ))}
+
+                      {/* Billing + plan controls */}
+                      <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'end' }}>
+                        <div className="orgs-field">
+                          <label className="orgs-label">Organization Plan</label>
+                          <select
+                            className="orgs-input"
+                            value={planSelection[org.id] || orgSubscriptions[org.id]?.plan_id || ''}
+                            onChange={e => setPlanSelection(prev => ({ ...prev, [org.id]: e.target.value }))}
+                          >
+                            <option value="">Select plan</option>
+                            {plans.map(plan => (
+                              <option key={plan.id} value={plan.id}>{formatPlanSummary(plan)}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <button
+                          className="orgs-btn orgs-btn--primary"
+                          onClick={() => handlePlanChange(org.id)}
+                          disabled={planUpdating[org.id] || !plans.length}
+                        >
+                          {planUpdating[org.id] ? 'Saving…' : 'Assign Plan'}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+                        Pick the plan tier for this organization, then click Assign Plan to save your change.
+                      </div>
+                      {planMessage[org.id] && (
+                        <div className="orgs-error">{planMessage[org.id]}</div>
+                      )}
 
                       {/* Add member */}
                       <div className="orgs-add-member">
