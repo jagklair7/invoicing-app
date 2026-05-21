@@ -36,6 +36,8 @@ export default function AuthCallback() {
       }
 
       if (data?.session) {
+        const user = data.session.user
+        await ensureProfileExists(user)
         setStatus('success')
         setMessage('Your account is now confirmed. Redirecting you to the dashboard…')
         window.setTimeout(() => navigate('/', { replace: true }), 2000)
@@ -48,6 +50,24 @@ export default function AuthCallback() {
 
     handleCallback()
   }, [navigate])
+
+  async function ensureProfileExists(user) {
+    if (!user?.id) return
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (!profile) {
+      await supabase.from('profiles').insert({
+        id: user.id,
+        full_name: user.user_metadata?.full_name ?? null,
+        is_super_admin: false,
+      })
+    }
+  }
 
   return (
     <div style={{ maxWidth: '420px', margin: '100px auto', padding: '24px', fontFamily: 'sans-serif', textAlign: 'center' }}>

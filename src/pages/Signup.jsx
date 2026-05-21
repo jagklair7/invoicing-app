@@ -34,7 +34,9 @@ export default function Signup() {
       options: {
         emailRedirectTo: redirectTo,
         data: {
-          full_name: fullName  // This metadata can be used by a DB trigger to auto-create an organization and link the user as an admin, for example
+          full_name: fullName,
+          is_super_admin: false,
+          role: 'member'
         }
       }
     })

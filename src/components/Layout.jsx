@@ -100,6 +100,15 @@ function AdminIcon() {
     </svg>
   )
 }
+function StatsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="10" width="3" height="4" rx="1" fill="currentColor" opacity=".85"/>
+      <rect x="6.5" y="6" width="3" height="8" rx="1" fill="currentColor" opacity=".65"/>
+      <rect x="11" y="2" width="3" height="12" rx="1" fill="currentColor" opacity=".4"/>
+    </svg>
+  )
+}
 
 // ── rest of the file continues as before...
 
@@ -280,7 +289,9 @@ export default function Layout({ children }) {
           {isSuperAdmin && (
             <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} />
           )}
-
+          {isSuperAdmin && (
+            <NavItem to="/admin/analytics" label="Analytics" icon={<StatsIcon />} />
+          )}
           {isSuperAdmin && (
             <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} />
           )}

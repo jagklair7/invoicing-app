@@ -322,6 +322,10 @@ export default function Dashboard() {
   const [chartData, setChartData]   = useState([])
   const [bizName, setBizName]       = useState('Klair Computer Inc.')
   const [billingData, setBillingData] = useState([])
+  const [currentPlan, setCurrentPlan] = useState(null)
+  const [newCustomers, setNewCustomers] = useState(0)
+  const [paymentRate, setPaymentRate] = useState(0)
+  const [monthOverMonth, setMonthOverMonth] = useState(0)
 
  // useEffect(() => { fetchAll() }, [])
 
@@ -338,22 +342,27 @@ async function fetchAll() {
   setLoading(true)
   const now = new Date()
   try {
-    const [invRes, custRes, settingsRes] = await Promise.all([
+    const [invRes, custRes, settingsRes, subscriptionRes] = await Promise.all([
       supabase.from('invoices').select('*, customers(name)')
         .eq('org_id', activeOrg.orgId)
         .order('created_at', { ascending: false }),
-      supabase.from('customers').select('id')
+      supabase.from('customers').select('id, created_at')
         .eq('org_id', activeOrg.orgId),
       supabase.from('organization_settings')
         .select('company_name')
         .eq('org_id', activeOrg.orgId)
-        .single()
+        .single(),
+      supabase.from('org_subscriptions')
+        .select('*, plan:plan_id(name, price_monthly)')
+        .eq('org_id', activeOrg.orgId)
+        .single(),
     ])
 
     const invoices  = invRes.data  || []
     const customers = custRes.data || []
 
     setBizName(settingsRes.data?.company_name || activeOrg.name || '')
+    setCurrentPlan(subscriptionRes.data?.plan || null)
 
     // ── Stats ──
     const paid      = invoices.filter(i => i.status === 'paid')
@@ -361,6 +370,17 @@ async function fetchAll() {
     const draft     = invoices.filter(i => i.status === 'draft')
     const paidTotal = paid.reduce((s, i) => s + Number(i.total || 0), 0)
     const outTotal  = sent.reduce((s, i) => s + Number(i.total || 0), 0)
+
+    const recentCustomerCount = customers.filter(c => {
+      if (!c.created_at) return false
+      const created = new Date(c.created_at)
+      const compare = new Date()
+      compare.setDate(compare.getDate() - 30)
+      return created >= compare
+    }).length
+
+    const paidCount = invoices.filter(i => i.status === 'paid').length
+    const paymentRatio = invoices.length ? Math.round((paidCount / invoices.length) * 100) : 0
 
     setStats({
       total:       invoices.length,
@@ -370,6 +390,8 @@ async function fetchAll() {
       draft:       draft.length,
       sent:        sent.length,
     })
+    setNewCustomers(recentCustomerCount)
+    setPaymentRate(paymentRatio)
 
     // ── Recent invoices ──
     setRecent(invoices.slice(0, 6))
@@ -420,6 +442,11 @@ async function fetchAll() {
         if (i.status === 'partial') slot.outstanding += Number(i.total || 0)
       })
     setBillingData(billingMonths)
+
+    const prevMonth = billingMonths[billingMonths.length - 2]?.paid || 0
+    const currentMonth = billingMonths[billingMonths.length - 1]?.paid || 0
+    const growth = prevMonth === 0 ? 0 : Math.round(((currentMonth - prevMonth) / prevMonth) * 100)
+    setMonthOverMonth(growth)
 
       } catch (err) {
         console.error(err)
@@ -520,11 +547,20 @@ async function fetchAll() {
               <div className="dash-stat-icon" style={{ background: 'var(--teal-lt)' }}>🏢</div>
             </div>
             <div className="dash-stat-value">{stats.customers}</div>
-            <div className="dash-stat-sub"><b>{stats.draft}</b> draft invoice{stats.draft !== 1 ? 's' : ''} in progress</div>
+            <div className="dash-stat-sub"><b>{newCustomers}</b> new customers in the last 30 days</div>
+          </div>
+
+          <div className="dash-stat">
+            <div className="dash-stat-top">
+              <span className="dash-stat-label">Current package</span>
+              <div className="dash-stat-icon" style={{ background: '#eef2ff' }}>📦</div>
+            </div>
+            <div className="dash-stat-value">{currentPlan?.name || 'Free'}</div>
+            <div className="dash-stat-sub">{currentPlan ? `$${currentPlan.price_monthly}/mo` : 'Free tier'}</div>
           </div>
         </div>
 
-        {/* ── Chart + Overdue ── */}
+        {/* ── Chart + Health Summary ── */}
         <div className="dash-row">
 
           {/* Revenue chart */}
@@ -549,23 +585,36 @@ async function fetchAll() {
             </div>
           </div>
 
-          {/* Overdue */}
+          {/* Health summary */}
           <div className="dash-panel">
             <div className="dash-panel-header">
-              <span className="dash-panel-title">⚠️ Overdue Invoices</span>
-              <button className="dash-panel-link" onClick={() => navigate('/invoices')}>View all</button>
+              <span className="dash-panel-title">Business health</span>
+              <button className="dash-panel-link" onClick={() => navigate('/customers')}>View customers</button>
             </div>
-            {overdue.length === 0 ? (
-              <div className="dash-empty">🎉 No overdue invoices</div>
-            ) : overdue.slice(0, 5).map(inv => (
-              <div key={inv.id} className="dash-overdue-row" onClick={() => navigate(`/invoices/${inv.id}`)}>
+            <div style={{ padding: '20px 24px', display: 'grid', gap: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <div>
-                  <div className="dash-overdue-name">{inv.customers?.name || '—'}</div>
-                  <div className="dash-overdue-days">{inv.daysOverdue}d overdue · {inv.number}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>Payment success</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6 }}>{paymentRate}%</div>
                 </div>
-                <div className="dash-overdue-amount">{fmt(inv.total)}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>Based on all invoices</div>
               </div>
-            ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>Month-over-month</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6 }}>{monthOverMonth >= 0 ? `+${monthOverMonth}%` : `${monthOverMonth}%`}</div>
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>Paid revenue growth</div>
+              </div>
+              <div style={{ padding: '18px', borderRadius: 14, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 10 }}>Suggested improvements</div>
+                <ul style={{ margin: 0, paddingLeft: 20, color: '#475569', fontSize: 13, lineHeight: 1.7 }}>
+                  <li>Follow up overdue invoices to improve cash flow.</li>
+                  <li>Convert more sent invoices into paid status.</li>
+                  <li>Keep customer acquisition rising with referral incentives.</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
         

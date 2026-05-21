@@ -21,6 +21,7 @@ import CustomerStatement from './pages/CustomerStatement.jsx'
 import CreateOrganization from './pages/CreateOrganization.jsx'
 import Onboarding        from './pages/Onboarding.jsx'
 import AdminPanel        from './pages/admin/AdminPanel.jsx'
+import GlobalAnalytics   from './pages/admin/GlobalAnalytics.jsx'
 import Organizations     from './pages/admin/Organizations.jsx'
 import SeedPlans         from './pages/admin/SeedPlans.jsx'
 import { OrgProvider, useOrg } from './context/OrgContext'
@@ -102,6 +103,9 @@ export default function App() {
           {/* ── Super Admin ──────────────────────────────────────────── */}
           <Route path="/admin" element={
             <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
+          } />
+          <Route path="/admin/analytics" element={
+            <SuperAdminRoute session={session}><GlobalAnalytics /></SuperAdminRoute>
           } />
           <Route path="/admin/seed-plans" element={
             <SuperAdminRoute session={session}><SeedPlans /></SuperAdminRoute>
