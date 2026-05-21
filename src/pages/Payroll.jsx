@@ -1,367 +1,720 @@
+// src/pages/Payroll.jsx
+// 2025 CRA payroll deduction rates — Alberta
+// Sources:
+//   CPP:      https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html
+//   EI:       https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/employment-insurance-ei/ei-premium-rates-maximums.html
+//   Federal:  https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4032-payroll-deductions-tables/t4032on-jan/t4032on-january-general-information.html
+//   Alberta:  https://www.alberta.ca/personal-income-tax
+
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { usePlan } from '../context/PlanContext'
 
-const DEFAULT_PAY_ENTRY = {
-  employee_id: '',
-  period_start: '',
-  period_end: '',
-  pay_date: '',
-  hours_worked: '',
+// ── 2025 CRA CONSTANTS ────────────────────────────────────────────────────────
+
+const CPP_2025 = {
+  rate:              0.0595,
+  basicExemption:    3500,
+  maxPensionable:    71300,
+  maxContribution:   4034.10,
 }
 
+const EI_2025 = {
+  employeeRate:      0.0164,
+  maxInsurable:      65700,
+  maxPremium:        1077.48,
+}
+
+const FEDERAL_BRACKETS_2025 = [
+  { min: 0,       max: 57375,   rate: 0.15   },
+  { min: 57375,   max: 114750,  rate: 0.205  },
+  { min: 114750,  max: 158519,  rate: 0.26   },
+  { min: 158519,  max: 220000,  rate: 0.29   },
+  { min: 220000,  max: Infinity,rate: 0.33   },
+]
+const FEDERAL_BASIC_PERSONAL_2025 = 16129
+
+const AB_BRACKETS_2025 = [
+  { min: 0,       max: 148269,  rate: 0.10   },
+  { min: 148269,  max: 177922,  rate: 0.12   },
+  { min: 177922,  max: 237230,  rate: 0.13   },
+  { min: 237230,  max: 355845,  rate: 0.14   },
+  { min: 355845,  max: Infinity,rate: 0.15   },
+]
+const AB_BASIC_PERSONAL_2025 = 21003
+
+// Pay periods per year by frequency
+const PAY_PERIODS = {
+  weekly:      52,
+  biweekly:    26,
+  semimonthly: 24,
+  monthly:     12,
+}
+
+// ── CRA CALCULATION FUNCTIONS ─────────────────────────────────────────────────
+
+/**
+ * Calculate CPP deduction for a single pay period
+ * CRA method: annualize gross, subtract exemption, apply rate, divide back
+ */
+function calcCPP(grossPay, frequency, ytdCPP = 0) {
+  const periods = PAY_PERIODS[frequency] || 26
+  const annualGross = grossPay * periods
+
+  // CPP is only on pensionable earnings between exemption and max
+  const annualPensionable = Math.min(
+    Math.max(annualGross - CPP_2025.basicExemption, 0),
+    CPP_2025.maxPensionable - CPP_2025.basicExemption
+  )
+  const annualCPP = annualPensionable * CPP_2025.rate
+  const perPeriodCPP = annualCPP / periods
+
+  // Don't exceed annual maximum minus already contributed
+  const remaining = Math.max(CPP_2025.maxContribution - ytdCPP, 0)
+  return Math.min(Math.round(perPeriodCPP * 100) / 100, remaining)
+}
+
+/**
+ * Calculate EI premium for a single pay period
+ */
+function calcEI(grossPay, frequency, ytdEI = 0) {
+  const periods = PAY_PERIODS[frequency] || 26
+  const annualGross = grossPay * periods
+
+  const annualInsurable = Math.min(annualGross, EI_2025.maxInsurable)
+  const annualEI = annualInsurable * EI_2025.employeeRate
+  const perPeriodEI = annualEI / periods
+
+  const remaining = Math.max(EI_2025.maxPremium - ytdEI, 0)
+  return Math.min(Math.round(perPeriodEI * 100) / 100, remaining)
+}
+
+/**
+ * Apply progressive tax brackets to annual income
+ */
+function applyBrackets(annualIncome, brackets) {
+  let tax = 0
+  for (const bracket of brackets) {
+    if (annualIncome <= bracket.min) break
+    const taxable = Math.min(annualIncome, bracket.max) - bracket.min
+    tax += taxable * bracket.rate
+  }
+  return tax
+}
+
+/**
+ * Calculate federal income tax for a single pay period (CRA periodic method)
+ * TD1 credits reduce the annual tax owing
+ */
+function calcFederalTax(grossPay, frequency, td1Credits = FEDERAL_BASIC_PERSONAL_2025) {
+  const periods = PAY_PERIODS[frequency] || 26
+  const annualGross = grossPay * periods
+
+  // Apply personal amount credit
+  const taxableIncome = Math.max(annualGross - td1Credits, 0)
+  const annualTax = applyBrackets(taxableIncome, FEDERAL_BRACKETS_2025)
+  const perPeriodTax = annualTax / periods
+
+  return Math.max(Math.round(perPeriodTax * 100) / 100, 0)
+}
+
+/**
+ * Calculate Alberta provincial income tax for a single pay period
+ */
+function calcProvincialTax(grossPay, frequency, td1Credits = AB_BASIC_PERSONAL_2025) {
+  const periods = PAY_PERIODS[frequency] || 26
+  const annualGross = grossPay * periods
+
+  const taxableIncome = Math.max(annualGross - td1Credits, 0)
+  const annualTax = applyBrackets(taxableIncome, AB_BRACKETS_2025)
+  const perPeriodTax = annualTax / periods
+
+  return Math.max(Math.round(perPeriodTax * 100) / 100, 0)
+}
+
+/**
+ * Full deduction calculation for one pay run
+ */
+function calcDeductions(employee, grossPay, ytd = {}) {
+  const freq     = employee.pay_frequency || 'biweekly'
+  const td1Fed   = Number(employee.td1_credits) || FEDERAL_BASIC_PERSONAL_2025
+  // AB provincial uses AB basic personal — in future can store separately
+  const td1AB    = AB_BASIC_PERSONAL_2025
+
+  const cpp            = calcCPP(grossPay, freq, ytd.cpp || 0)
+  const ei             = calcEI(grossPay, freq, ytd.ei || 0)
+  const federal_tax    = calcFederalTax(grossPay, freq, td1Fed)
+  const provincial_tax = calcProvincialTax(grossPay, freq, td1AB)
+  const total          = cpp + ei + federal_tax + provincial_tax
+  const net            = Math.max(grossPay - total, 0)
+
+  return { cpp, ei, federal_tax, provincial_tax, total, net }
+}
+
+// ── CSS ───────────────────────────────────────────────────────────────────────
+const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  .pr {
+    --teal:     #0d7377;
+    --teal-lt:  #e8f5f5;
+    --teal-mid: #14a0a5;
+    --slate:    #1e293b;
+    --slate-mid:#475569;
+    --slate-lt: #94a3b8;
+    --border:   #e2e8f0;
+    --bg:       #f1f5f9;
+    --white:    #ffffff;
+    --red:      #e53e3e;
+    --amber:    #d97706;
+    --green:    #059669;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    padding: 28px 24px 60px;
+  }
+
+  .pr-header {
+    max-width: 1100px; margin: 0 auto 24px;
+    display: flex; align-items: flex-end;
+    justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  }
+  .pr-title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 26px; font-weight: 600; color: var(--slate);
+    letter-spacing: -0.02em; line-height: 1.1;
+  }
+  .pr-subtitle { font-size: 13px; color: var(--slate-lt); margin-top: 3px; }
+
+  /* ── Buttons ── */
+  .pr-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    font-family: 'DM Sans', sans-serif; border: 1.5px solid var(--border);
+    background: var(--white); color: var(--slate-mid);
+    cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .pr-btn:hover { border-color: var(--slate-lt); color: var(--slate); background: #f8fafc; }
+  .pr-btn--primary { background: var(--teal); color: white; border-color: var(--teal); }
+  .pr-btn--primary:hover { background: var(--teal-mid); border-color: var(--teal-mid); color: white; }
+  .pr-btn--danger { color: var(--red); border-color: #fecaca; }
+  .pr-btn--danger:hover { background: #fff5f5; border-color: var(--red); }
+  .pr-btn--ghost { background: transparent; border-color: transparent; color: var(--slate-mid); }
+  .pr-btn--ghost:hover { background: var(--border); color: var(--slate); }
+  .pr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Gate ── */
+  .pr-gate {
+    max-width: 520px; margin: 60px auto;
+    background: var(--white); border-radius: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 30px rgba(15,23,42,.08);
+    padding: 40px; text-align: center;
+  }
+  .pr-gate-icon { font-size: 40px; margin-bottom: 16px; }
+  .pr-gate-title { font-family: 'Fraunces', Georgia, serif; font-size: 22px; font-weight: 600; color: var(--slate); margin-bottom: 10px; }
+  .pr-gate-desc { font-size: 14px; color: var(--slate-mid); line-height: 1.7; margin-bottom: 24px; }
+
+  /* ── Create form panel ── */
+  .pr-panel {
+    max-width: 1100px; margin: 0 auto 20px;
+    background: var(--white); border-radius: 14px;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;
+  }
+  .pr-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 22px; border-bottom: 1px solid var(--border);
+  }
+  .pr-panel-title { font-size: 13px; font-weight: 600; color: var(--slate); }
+
+  /* ── Form grid ── */
+  .pr-form { padding: 22px; display: flex; flex-direction: column; gap: 18px; }
+  .pr-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pr-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 700px) {
+    .pr-grid-2 { grid-template-columns: 1fr; }
+    .pr-grid-4 { grid-template-columns: 1fr 1fr; }
+  }
+
+  .pr-field { display: flex; flex-direction: column; gap: 5px; }
+  .pr-field label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--slate-lt);
+  }
+  .pr-input {
+    font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--slate);
+    background: white; border: 1.5px solid var(--border); border-radius: 8px;
+    padding: 8px 11px; outline: none;
+    transition: border-color .15s, box-shadow .15s; width: 100%;
+  }
+  .pr-input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(13,115,119,0.1); }
+  .pr-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+    padding-right: 28px; cursor: pointer;
+  }
+
+  /* ── Preview cards ── */
+  .pr-preview {
+    background: linear-gradient(135deg, #1e293b 0%, #2d3f55 100%);
+    border-radius: 12px; padding: 20px 22px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 600px) { .pr-preview { grid-template-columns: 1fr; } }
+
+  .pr-preview-main { display: flex; flex-direction: column; gap: 4px; }
+  .pr-preview-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.4); }
+  .pr-preview-value { font-family: 'Fraunces', Georgia, serif; font-size: 28px; font-weight: 600; color: white; letter-spacing: -0.02em; }
+  .pr-preview-note { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 2px; }
+
+  .pr-deductions { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+  .pr-ded-row { display: flex; justify-content: space-between; align-items: center; }
+  .pr-ded-label { font-size: 11px; color: rgba(255,255,255,0.5); }
+  .pr-ded-value { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.85); font-variant-numeric: tabular-nums; }
+  .pr-ded-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 2px 0; }
+  .pr-ded-row--total .pr-ded-label { color: rgba(255,255,255,0.7); font-weight: 600; }
+  .pr-ded-row--total .pr-ded-value { color: white; font-weight: 700; }
+
+  /* ── CRA notice ── */
+  .pr-cra-note {
+    background: var(--teal-lt); border: 1px solid #b2e0e2;
+    border-radius: 10px; padding: 12px 16px;
+    font-size: 12px; color: var(--teal); line-height: 1.6;
+  }
+
+  /* ── Status message ── */
+  .pr-status-ok  { background: var(--teal-lt); border: 1px solid #b2e0e2; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--teal); }
+  .pr-status-err { background: #fff5f5; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--red); }
+
+  /* ── Runs table ── */
+  .pr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pr-table th {
+    padding: 10px 18px; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--slate-lt); background: #f8fafc;
+    border-bottom: 1px solid var(--border); text-align: left;
+  }
+  .pr-table td { padding: 12px 18px; border-bottom: 1px solid #f8fafc; color: var(--slate-mid); vertical-align: middle; }
+  .pr-table tr:last-child td { border-bottom: none; }
+  .pr-table tbody tr:hover { background: #f8fafc; }
+  .pr-table td:first-child { color: var(--slate); font-weight: 500; }
+
+  /* ── Status badge ── */
+  .pr-badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 9px; border-radius: 20px;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .pr-badge--draft     { background: #f1f5f9; color: #94a3b8; }
+  .pr-badge--processed { background: #f0fdf4; color: #059669; }
+  .pr-badge--paid      { background: #eff6ff; color: #2563eb; }
+  .pr-badge--canceled  { background: #fff5f5; color: #e53e3e; }
+
+  /* ── Inline edit row ── */
+  .pr-edit-row { background: #f8fafc; }
+
+  /* ── Empty ── */
+  .pr-empty { padding: 40px 20px; text-align: center; font-size: 13px; color: var(--slate-lt); }
+
+  /* ── Spinner ── */
+  .pr-spinner {
+    width: 28px; height: 28px; border: 2.5px solid var(--border);
+    border-top-color: var(--teal); border-radius: 50%;
+    animation: prspin .7s linear infinite; margin: 60px auto;
+  }
+  @keyframes prspin { to { transform: rotate(360deg); } }
+`
+
+const fmtCAD = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
+const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+
+const DEFAULT_FORM = { employee_id: '', period_start: '', period_end: '', pay_date: '', hours_worked: '' }
+
 export default function Payroll() {
-  const { activeOrg } = useOrg()
-  const { can } = usePlan()
+  const { activeOrg }  = useOrg()
+  const { can }        = usePlan()
+  const canPayroll     = can('payroll')
+
   const [employees, setEmployees] = useState([])
-  const [runs, setRuns] = useState([])
-  const [form, setForm] = useState(DEFAULT_PAY_ENTRY)
-  const [saving, setSaving] = useState(false)
-  const [statusMessage, setStatusMessage] = useState('')
-  const [editRunId, setEditRunId] = useState(null)
-  const [editRunData, setEditRunData] = useState({ period_start: '', period_end: '', pay_date: '', status: 'processed' })
+  const [runs, setRuns]           = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [form, setForm]           = useState(DEFAULT_FORM)
+  const [saving, setSaving]       = useState(false)
+  const [statusMsg, setStatusMsg] = useState(null) // { ok, text }
+
+  // Inline edit state
+  const [editId, setEditId]     = useState(null)
+  const [editData, setEditData] = useState({})
   const [editSaving, setEditSaving] = useState(false)
 
-  const canPayroll = can('payroll')
-
   useEffect(() => {
-    if (activeOrg?.orgId) {
-      fetchEmployees()
-      fetchRuns()
-    }
+    if (activeOrg?.orgId) fetchAll()
   }, [activeOrg?.orgId])
 
-  async function fetchEmployees() {
-    if (!activeOrg?.orgId) return
-    const { data } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('org_id', activeOrg.orgId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-    setEmployees(data || [])
+  async function fetchAll() {
+    setLoading(true)
+    const [empRes, runsRes] = await Promise.all([
+      supabase.from('employees').select('*').eq('org_id', activeOrg.orgId).eq('status', 'active').order('name'),
+      supabase.from('payroll_runs').select('*').eq('org_id', activeOrg.orgId).order('pay_date', { ascending: false }),
+    ])
+    setEmployees(empRes.data || [])
+    setRuns(runsRes.data || [])
+    setLoading(false)
   }
 
-  async function fetchRuns() {
-    if (!activeOrg?.orgId) return
-    const { data } = await supabase
-      .from('payroll_runs')
-      .select('*')
-      .eq('org_id', activeOrg.orgId)
-      .order('pay_date', { ascending: false })
-    setRuns(data || [])
-  }
-
-  const startEditRun = (run) => {
-    setEditRunId(run.id)
-    setEditRunData({
-      period_start: run.period_start || '',
-      period_end: run.period_end || '',
-      pay_date: run.pay_date || '',
-      status: run.status || 'processed',
-    })
-  }
-
-  const cancelEditRun = () => {
-    setEditRunId(null)
-    setEditRunData({ period_start: '', period_end: '', pay_date: '', status: 'processed' })
-    setEditSaving(false)
-  }
-
-  async function saveRunEdit(runId) {
-    if (!activeOrg?.orgId) return
-    if (!editRunData.period_start || !editRunData.period_end || !editRunData.pay_date) return
-
-    setEditSaving(true)
-    const { error } = await supabase
-      .from('payroll_runs')
-      .update({
-        period_start: editRunData.period_start,
-        period_end: editRunData.period_end,
-        pay_date: editRunData.pay_date,
-        status: editRunData.status,
-      })
-      .eq('id', runId)
-
-    if (error) {
-      setStatusMessage(error.message || 'Unable to update payroll run.')
-    } else {
-      setStatusMessage('Payroll run updated successfully.')
-      await fetchRuns()
-      cancelEditRun()
-    }
-
-    setEditSaving(false)
-  }
-
-  async function deleteRun(runId) {
-    if (!window.confirm('Delete this payroll run? This will also remove its payroll entries.')) return
-    const { error } = await supabase
-      .from('payroll_runs')
-      .delete()
-      .eq('id', runId)
-
-    if (error) {
-      setStatusMessage(error.message || 'Unable to delete payroll run.')
-      return
-    }
-
-    setStatusMessage('Payroll run deleted successfully.')
-    if (editRunId === runId) cancelEditRun()
-    fetchRuns()
-  }
-
-  const selectedEmployee = useMemo(
-    () => employees.find(emp => emp.id === form.employee_id) || null,
+  // ── Selected employee ──
+  const selectedEmp = useMemo(
+    () => employees.find(e => e.id === form.employee_id) || null,
     [employees, form.employee_id]
   )
 
-  const canCreate = canPayroll && form.employee_id && form.pay_date && form.period_start && form.period_end
+  // ── Live deduction preview ──
+  const grossPreview = useMemo(() => {
+    if (!selectedEmp) return 0
+    if (selectedEmp.pay_type === 'hourly') return (Number(selectedEmp.pay_rate) || 0) * (Number(form.hours_worked) || 0)
+    return Number(selectedEmp.pay_rate) || 0
+  }, [selectedEmp, form.hours_worked])
 
-  const computeGross = () => {
-    if (!selectedEmployee) return 0
-    const payRate = Number(selectedEmployee.pay_rate) || 0
-    if (selectedEmployee.pay_type === 'hourly') {
-      const hours = Number(form.hours_worked) || 0
-      return payRate * hours
-    }
-    return payRate
-  }
+  const deductionPreview = useMemo(() => {
+    if (!selectedEmp || grossPreview <= 0) return { cpp: 0, ei: 0, federal_tax: 0, provincial_tax: 0, total: 0, net: 0 }
+    return calcDeductions(selectedEmp, grossPreview)
+  }, [selectedEmp, grossPreview])
 
-  const gross = computeGross()
-  const deductions = useMemo(() => {
-    const cpp = Number((gross * 0.0525).toFixed(2))
-    const ei = Number((gross * 0.0162).toFixed(2))
-    const federal_tax = Number((gross * 0.15).toFixed(2))
-    const provincial_tax = Number((gross * 0.05).toFixed(2))
-    return { cpp, ei, federal_tax, provincial_tax }
-  }, [gross])
-
-  const handleCreateRun = async (e) => {
+  // ── Create payroll run ──
+  async function handleCreate(e) {
     e.preventDefault()
-    setStatusMessage('')
-    if (!activeOrg?.orgId || !canCreate) return
-    if (!canPayroll) {
-      setStatusMessage('Payroll is unavailable on your current plan.')
-      return
-    }
-    if (!selectedEmployee) {
-      setStatusMessage('Select an employee to create a payroll run.')
-      return
-    }
-    if (selectedEmployee.pay_type === 'hourly' && !form.hours_worked) {
-      setStatusMessage('Enter hours worked for hourly employees.')
-      return
-    }
+    setStatusMsg(null)
+    if (!canPayroll) return setStatusMsg({ ok: false, text: 'Payroll not available on your plan.' })
+    if (!selectedEmp) return setStatusMsg({ ok: false, text: 'Select an employee.' })
+    if (!form.period_start || !form.period_end || !form.pay_date) return setStatusMsg({ ok: false, text: 'Fill in all date fields.' })
+    if (selectedEmp.pay_type === 'hourly' && !form.hours_worked) return setStatusMsg({ ok: false, text: 'Enter hours worked.' })
 
     setSaving(true)
-
     try {
-      const totalDeductions = deductions.cpp + deductions.ei + deductions.federal_tax + deductions.provincial_tax
-      const net = Number((gross - totalDeductions).toFixed(2))
-
-      const { data: runData, error: runError } = await supabase
-        .from('payroll_runs')
-        .insert([{ org_id: activeOrg.orgId, period_start: form.period_start, period_end: form.period_end, pay_date: form.pay_date, status: 'processed', total_gross: gross, total_deductions: totalDeductions, total_net: net }])
-        .select()
-        .single()
-
-      if (runError) throw runError
-
+      // Get YTD totals for this employee
       const { data: pastEntries } = await supabase
         .from('payroll_entries')
-        .select('*')
+        .select('gross, cpp, ei, federal_tax, provincial_tax')
         .eq('org_id', activeOrg.orgId)
-        .eq('employee_id', selectedEmployee.id)
+        .eq('employee_id', selectedEmp.id)
 
-      const ytdGross = (pastEntries || []).reduce((sum, item) => sum + Number(item.gross || 0), 0) + gross
-      const ytdCpp = (pastEntries || []).reduce((sum, item) => sum + Number(item.cpp || 0), 0) + deductions.cpp
-      const ytdEi = (pastEntries || []).reduce((sum, item) => sum + Number(item.ei || 0), 0) + deductions.ei
-      const ytdTax = (pastEntries || []).reduce((sum, item) => sum + Number(item.federal_tax || 0) + Number(item.provincial_tax || 0), 0) + deductions.federal_tax + deductions.provincial_tax
+      const ytd = (pastEntries || []).reduce((acc, p) => ({
+        cpp: acc.cpp + Number(p.cpp || 0),
+        ei:  acc.ei  + Number(p.ei  || 0),
+      }), { cpp: 0, ei: 0 })
 
-      const { error: entryError } = await supabase
+      const gross = grossPreview
+      const ded   = calcDeductions(selectedEmp, gross, ytd)
+
+      const ytdGross = (pastEntries || []).reduce((s, p) => s + Number(p.gross || 0), 0) + gross
+      const ytdCPP   = ytd.cpp + ded.cpp
+      const ytdEI    = ytd.ei  + ded.ei
+      const ytdTax   = (pastEntries || []).reduce((s, p) => s + Number(p.federal_tax || 0) + Number(p.provincial_tax || 0), 0) + ded.federal_tax + ded.provincial_tax
+
+      const { data: run, error: runErr } = await supabase
+        .from('payroll_runs')
+        .insert([{
+          org_id:            activeOrg.orgId,
+          period_start:      form.period_start,
+          period_end:        form.period_end,
+          pay_date:          form.pay_date,
+          status:            'processed',
+          total_gross:       gross,
+          total_deductions:  ded.total,
+          total_net:         ded.net,
+        }])
+        .select().single()
+      if (runErr) throw runErr
+
+      const { error: entryErr } = await supabase
         .from('payroll_entries')
-        .insert([{ payroll_run_id: runData.id, org_id: activeOrg.orgId, employee_id: selectedEmployee.id, hours_worked: selectedEmployee.pay_type === 'hourly' ? Number(form.hours_worked) || 0 : null, gross, cpp: deductions.cpp, ei: deductions.ei, federal_tax: deductions.federal_tax, provincial_tax: deductions.provincial_tax, net, ytd_gross: ytdGross, ytd_cpp: ytdCpp, ytd_ei: ytdEi, ytd_tax: ytdTax }])
+        .insert([{
+          payroll_run_id:  run.id,
+          org_id:          activeOrg.orgId,
+          employee_id:     selectedEmp.id,
+          hours_worked:    selectedEmp.pay_type === 'hourly' ? Number(form.hours_worked) : null,
+          gross,
+          cpp:             ded.cpp,
+          ei:              ded.ei,
+          federal_tax:     ded.federal_tax,
+          provincial_tax:  ded.provincial_tax,
+          net:             ded.net,
+          ytd_gross:       ytdGross,
+          ytd_cpp:         ytdCPP,
+          ytd_ei:          ytdEI,
+          ytd_tax:         ytdTax,
+        }])
+      if (entryErr) throw entryErr
 
-      if (entryError) throw entryError
-
-      setStatusMessage('Payroll run created successfully.')
-      setForm(DEFAULT_PAY_ENTRY)
-      fetchRuns()
+      setStatusMsg({ ok: true, text: `Payroll run created. Net pay: ${fmtCAD(ded.net)}` })
+      setForm(DEFAULT_FORM)
+      fetchAll()
     } catch (err) {
-      setStatusMessage(err.message || 'Unable to create payroll run.')
+      setStatusMsg({ ok: false, text: err.message })
     } finally {
       setSaving(false)
     }
   }
 
-  return (
-    <div className="max-w-6xl mx-auto p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">Payroll</h1>
-          {activeOrg && <p className="text-sm text-gray-400 mt-1">{activeOrg.name}</p>}
+  // ── Edit run ──
+  function startEdit(run) {
+    setEditId(run.id)
+    setEditData({ period_start: run.period_start, period_end: run.period_end, pay_date: run.pay_date, status: run.status })
+  }
+  function cancelEdit() { setEditId(null); setEditData({}) }
+
+  async function saveEdit(runId) {
+    setEditSaving(true)
+    const { error } = await supabase.from('payroll_runs').update(editData).eq('id', runId).eq('org_id', activeOrg.orgId)
+    if (error) setStatusMsg({ ok: false, text: error.message })
+    else { setStatusMsg({ ok: true, text: 'Run updated.' }); cancelEdit(); fetchAll() }
+    setEditSaving(false)
+  }
+
+  async function deleteRun(run) {
+    if (!window.confirm(`Delete payroll run for ${fmtDate(run.pay_date)}? This also removes its entries.`)) return
+    await supabase.from('payroll_runs').delete().eq('id', run.id).eq('org_id', activeOrg.orgId)
+    setStatusMsg({ ok: true, text: 'Run deleted.' })
+    fetchAll()
+  }
+
+  // ── Plan gate ──
+  if (!canPayroll) return (
+    <>
+      <style>{css}</style>
+      <div className="pr">
+        <div className="pr-gate">
+          <div className="pr-gate-icon">🔒</div>
+          <div className="pr-gate-title">Payroll requires a paid plan</div>
+          <div className="pr-gate-desc">Upgrade to Starter or higher to run payroll with accurate CRA deductions for CPP, EI, and income tax.</div>
+          <button className="pr-btn pr-btn--primary" style={{ padding: '11px 28px', fontSize: 14 }} onClick={() => window.location.href = '/settings'}>
+            Upgrade Plan →
+          </button>
         </div>
       </div>
+    </>
+  )
 
-      {!canPayroll ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 mb-8 text-amber-900">
-          <strong className="block text-sm font-semibold mb-2">Payroll is unavailable</strong>
-          <p className="text-sm leading-6">Your current plan does not include payroll. Upgrade to Starter or higher to add payroll runs.</p>
+  return (
+    <>
+      <style>{css}</style>
+      <div className="pr">
+
+        {/* Header */}
+        <div className="pr-header">
+          <div>
+            <div className="pr-title">Payroll</div>
+            <div className="pr-subtitle">2025 CRA rates · Alberta · {employees.length} active employee{employees.length !== 1 ? 's' : ''}</div>
+          </div>
         </div>
-      ) : (
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-10">
-          <h2 className="text-lg font-semibold mb-4">Create payroll run</h2>
-          <form onSubmit={handleCreateRun} className="grid gap-6 lg:grid-cols-2">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Employee</label>
-              <select name="employee_id" value={form.employee_id} onChange={e => setForm(prev => ({ ...prev, employee_id: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
-                <option value="">Select employee</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name} — {emp.pay_type}</option>
-                ))}
-              </select>
+
+        {/* Create run form */}
+        <div className="pr-panel">
+          <div className="pr-panel-header">
+            <span className="pr-panel-title">New Payroll Run</span>
+          </div>
+          <form className="pr-form" onSubmit={handleCreate}>
+
+            {/* Employee + dates */}
+            <div className="pr-grid-2">
+              <div className="pr-field">
+                <label>Employee *</label>
+                <select className="pr-input pr-select" value={form.employee_id}
+                  onChange={e => setForm(p => ({ ...p, employee_id: e.target.value, hours_worked: '' }))}>
+                  <option value="">Select employee…</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} — {emp.pay_type === 'hourly' ? `$${Number(emp.pay_rate).toFixed(2)}/hr` : `$${Number(emp.pay_rate).toFixed(2)}/yr`} · {emp.pay_frequency} · {emp.province}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedEmp?.pay_type === 'hourly' && (
+                <div className="pr-field">
+                  <label>Hours Worked *</label>
+                  <input className="pr-input" type="number" min="0" step="0.25"
+                    placeholder="e.g. 80" value={form.hours_worked}
+                    onChange={e => setForm(p => ({ ...p, hours_worked: e.target.value }))} />
+                </div>
+              )}
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Period start</label>
-              <input name="period_start" type="date" value={form.period_start} onChange={e => setForm(prev => ({ ...prev, period_start: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none" />
+
+            <div className="pr-grid-2">
+              <div className="pr-field">
+                <label>Period Start *</label>
+                <input className="pr-input" type="date" value={form.period_start}
+                  onChange={e => setForm(p => ({ ...p, period_start: e.target.value }))} />
+              </div>
+              <div className="pr-field">
+                <label>Period End *</label>
+                <input className="pr-input" type="date" value={form.period_end}
+                  onChange={e => setForm(p => ({ ...p, period_end: e.target.value }))} />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Period end</label>
-              <input name="period_end" type="date" value={form.period_end} onChange={e => setForm(prev => ({ ...prev, period_end: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none" />
+
+            <div style={{ maxWidth: 320 }}>
+              <div className="pr-field">
+                <label>Pay Date *</label>
+                <input className="pr-input" type="date" value={form.pay_date}
+                  onChange={e => setForm(p => ({ ...p, pay_date: e.target.value }))} />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Pay date</label>
-              <input name="pay_date" type="date" value={form.pay_date} onChange={e => setForm(prev => ({ ...prev, pay_date: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none" />
-            </div>
-            {selectedEmployee?.pay_type === 'hourly' && (
-              <div className="lg:col-span-2">
-                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Hours worked</label>
-                <input name="hours_worked" type="number" step="0.25" min="0" value={form.hours_worked} onChange={e => setForm(prev => ({ ...prev, hours_worked: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none" placeholder="e.g. 80" />
+
+            {/* Live deduction preview */}
+            {selectedEmp && grossPreview > 0 && (
+              <div className="pr-preview">
+                <div className="pr-preview-main">
+                  <div className="pr-preview-label">Gross Pay</div>
+                  <div className="pr-preview-value">{fmtCAD(grossPreview)}</div>
+                  <div className="pr-preview-note">
+                    {selectedEmp.pay_type === 'hourly'
+                      ? `${form.hours_worked}h × ${fmtCAD(selectedEmp.pay_rate)}/hr`
+                      : `${selectedEmp.pay_frequency} salary`}
+                  </div>
+                  <div style={{ marginTop: 14 }}>
+                    <div className="pr-preview-label">Net Pay</div>
+                    <div style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22, fontWeight: 600, color: '#6ee7b7', letterSpacing: '-0.02em', marginTop: 2 }}>
+                      {fmtCAD(deductionPreview.net)}
+                    </div>
+                  </div>
+                </div>
+                <div className="pr-deductions">
+                  <div className="pr-ded-row">
+                    <span className="pr-ded-label">CPP (5.95%)</span>
+                    <span className="pr-ded-value">{fmtCAD(deductionPreview.cpp)}</span>
+                  </div>
+                  <div className="pr-ded-row">
+                    <span className="pr-ded-label">EI (1.64%)</span>
+                    <span className="pr-ded-value">{fmtCAD(deductionPreview.ei)}</span>
+                  </div>
+                  <div className="pr-ded-row">
+                    <span className="pr-ded-label">Federal tax</span>
+                    <span className="pr-ded-value">{fmtCAD(deductionPreview.federal_tax)}</span>
+                  </div>
+                  <div className="pr-ded-row">
+                    <span className="pr-ded-label">AB Provincial</span>
+                    <span className="pr-ded-value">{fmtCAD(deductionPreview.provincial_tax)}</span>
+                  </div>
+                  <div className="pr-ded-divider" />
+                  <div className="pr-ded-row pr-ded-row--total">
+                    <span className="pr-ded-label">Total deductions</span>
+                    <span className="pr-ded-value">{fmtCAD(deductionPreview.total)}</span>
+                  </div>
+                </div>
               </div>
             )}
-            <div className="lg:col-span-2 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Gross pay</div>
-                <div className="text-xl font-semibold text-slate-900">${gross.toFixed(2)}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Net pay</div>
-                <div className="text-xl font-semibold text-slate-900">${(gross - (deductions.cpp + deductions.ei + deductions.federal_tax + deductions.provincial_tax)).toFixed(2)}</div>
-              </div>
+
+            {/* CRA rates notice */}
+            <div className="pr-cra-note">
+              ✓ Using 2025 CRA rates — CPP 5.95% (max $4,034.10) · EI 1.64% (max $1,077.48) · Federal brackets up to 33% · Alberta brackets up to 15% · TD1 basic personal amount applied
             </div>
-            <div className="lg:col-span-2"> 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">CPP</div>
-                  <div className="text-lg font-semibold text-slate-900">${deductions.cpp.toFixed(2)}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">EI</div>
-                  <div className="text-lg font-semibold text-slate-900">${deductions.ei.toFixed(2)}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">Federal tax</div>
-                  <div className="text-lg font-semibold text-slate-900">${deductions.federal_tax.toFixed(2)}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">Provincial tax</div>
-                  <div className="text-lg font-semibold text-slate-900">${deductions.provincial_tax.toFixed(2)}</div>
-                </div>
+
+            {statusMsg && (
+              <div className={statusMsg.ok ? 'pr-status-ok' : 'pr-status-err'}>
+                {statusMsg.ok ? '✓' : '⚠'} {statusMsg.text}
               </div>
-            </div>
-            {statusMessage && (
-              <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-slate-50 p-4 text-sm text-slate-700">{statusMessage}</div>
             )}
-            <div className="lg:col-span-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-slate-500">{employees.length} active employee{employees.length === 1 ? '' : 's'} available for payroll</div>
-              <button type="submit" disabled={!canCreate || saving}
-                className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-50 transition">
-                {saving ? 'Creating...' : 'Create payroll run'}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="pr-btn pr-btn--primary" type="submit" disabled={saving || !form.employee_id || !form.period_start || !form.period_end || !form.pay_date}>
+                {saving ? 'Creating…' : '+ Create Payroll Run'}
               </button>
             </div>
           </form>
         </div>
-      )}
 
-      <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b">
-            <tr>
-              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Period</th>
-              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Pay date</th>
-              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Gross</th>
-              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Net</th>
-              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Status</th>
-              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {runs.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-400 text-sm">No payroll runs yet. Create one to start recording payments.</td>
-              </tr>
-            ) : runs.map(run => (
-              editRunId === run.id ? (
-                <tr key={run.id} className="bg-slate-50">
-                  <td className="px-6 py-4">
-                    <input value={editRunData.period_start} onChange={e => setEditRunData(prev => ({ ...prev, period_start: e.target.value }))}
-                      type="date" className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none" />
-                  </td>
-                  <td className="px-6 py-4">
-                    <input value={editRunData.pay_date} onChange={e => setEditRunData(prev => ({ ...prev, pay_date: e.target.value }))}
-                      type="date" className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none" />
-                  </td>
-                  <td className="px-6 py-4">${Number(run.total_gross || 0).toFixed(2)}</td>
-                  <td className="px-6 py-4">${Number(run.total_net || 0).toFixed(2)}</td>
-                  <td className="px-6 py-4">
-                    <select value={editRunData.status} onChange={e => setEditRunData(prev => ({ ...prev, status: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
-                      <option value="draft">Draft</option>
-                      <option value="processed">Processed</option>
-                      <option value="canceled">Canceled</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 text-right space-x-2">
-                    <button type="button" onClick={() => saveRunEdit(run.id)} disabled={editSaving}
-                      className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
-                      {editSaving ? 'Saving...' : 'Save'}
-                    </button>
-                    <button type="button" onClick={cancelEditRun}
-                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-                      Cancel
-                    </button>
-                  </td>
+        {/* Runs table */}
+        <div className="pr-panel">
+          <div className="pr-panel-header">
+            <span className="pr-panel-title">Payroll History</span>
+          </div>
+          {loading ? (
+            <div className="pr-spinner" />
+          ) : runs.length === 0 ? (
+            <div className="pr-empty">No payroll runs yet. Create one above.</div>
+          ) : (
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Pay Date</th>
+                  <th style={{ textAlign: 'right' }}>Gross</th>
+                  <th style={{ textAlign: 'right' }}>Deductions</th>
+                  <th style={{ textAlign: 'right' }}>Net</th>
+                  <th>Status</th>
+                  <th style={{ width: 140 }}></th>
                 </tr>
-              ) : (
-                <tr key={run.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4">{run.period_start} → {run.period_end}</td>
-                  <td className="px-6 py-4">{run.pay_date}</td>
-                  <td className="px-6 py-4">${Number(run.total_gross || 0).toFixed(2)}</td>
-                  <td className="px-6 py-4">${Number(run.total_net || 0).toFixed(2)}</td>
-                  <td className="px-6 py-4 capitalize text-slate-700">{run.status}</td>
-                  <td className="px-6 py-4 text-right space-x-2">
-                    <button type="button" onClick={() => startEditRun(run)}
-                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
-                      Edit
-                    </button>
-                    <button type="button" onClick={() => deleteRun(run.id)}
-                      className="inline-flex items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 transition">
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              )
-            ))}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {runs.map(run => editId === run.id ? (
+                  <tr key={run.id} className="pr-edit-row">
+                    <td>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input className="pr-input" type="date" value={editData.period_start}
+                          onChange={e => setEditData(p => ({ ...p, period_start: e.target.value }))}
+                          style={{ width: 130, fontSize: 12, padding: '5px 8px' }} />
+                        <span style={{ color: '#94a3b8' }}>→</span>
+                        <input className="pr-input" type="date" value={editData.period_end}
+                          onChange={e => setEditData(p => ({ ...p, period_end: e.target.value }))}
+                          style={{ width: 130, fontSize: 12, padding: '5px 8px' }} />
+                      </div>
+                    </td>
+                    <td>
+                      <input className="pr-input" type="date" value={editData.pay_date}
+                        onChange={e => setEditData(p => ({ ...p, pay_date: e.target.value }))}
+                        style={{ width: 140, fontSize: 12, padding: '5px 8px' }} />
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{fmtCAD(run.total_gross)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtCAD(run.total_deductions)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtCAD(run.total_net)}</td>
+                    <td>
+                      <select className="pr-input pr-select" value={editData.status}
+                        onChange={e => setEditData(p => ({ ...p, status: e.target.value }))}
+                        style={{ fontSize: 12, padding: '5px 8px', width: 120 }}>
+                        <option value="draft">Draft</option>
+                        <option value="processed">Processed</option>
+                        <option value="paid">Paid</option>
+                        <option value="canceled">Canceled</option>
+                      </select>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="pr-btn pr-btn--primary" style={{ fontSize: 12, padding: '5px 12px' }}
+                          onClick={() => saveEdit(run.id)} disabled={editSaving}>
+                          {editSaving ? '…' : 'Save'}
+                        </button>
+                        <button className="pr-btn pr-btn--ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={run.id}>
+                    <td>{fmtDate(run.period_start)} → {fmtDate(run.period_end)}</td>
+                    <td>{fmtDate(run.pay_date)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtCAD(run.total_gross)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#e53e3e' }}>{fmtCAD(run.total_deductions)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#059669', fontWeight: 600 }}>{fmtCAD(run.total_net)}</td>
+                    <td><span className={`pr-badge pr-badge--${run.status}`}>{run.status}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => startEdit(run)}>Edit</button>
+                        <button className="pr-btn pr-btn--danger" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => deleteRun(run)}>Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
       </div>
-    </div>
+    </>
   )
 }
