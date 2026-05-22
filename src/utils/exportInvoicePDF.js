@@ -86,7 +86,19 @@ function loadImage(src) {
 }
 
 // ── Main export function ──────────────────────────────────────────────────────
-export async function exportInvoicePDF(invoice, customer, items, orgId) {
+export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
+  if ((!items || items.length === 0) && invoice?.id) {
+    const { data: fetchedItems, error: itemsErr } = await supabase
+      .from('invoice_items')
+      .select('*')
+      .eq('invoice_id', invoice.id)
+      .eq('org_id', orgId)
+
+    if (!itemsErr && Array.isArray(fetchedItems)) {
+      items = fetchedItems
+    }
+  }
+
   const hasAnyDiscount = items.some(i => i.discount_value > 0 && i.discount_type !== 'none')
 
   const { data: orgRow } = await supabase

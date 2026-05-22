@@ -805,6 +805,14 @@ export default function Invoices() {
         break
       case 'pdf':
         await exportInvoicePDF(inv, inv.customers, [], activeOrg.orgId)
+        if (inv.status === 'draft') {
+          await supabase
+            .from('invoices')
+            .update({ status: 'sent' })
+            .eq('id', inv.id)
+            .eq('org_id', activeOrg.orgId)
+          await fetchInvoices()
+        }
         break
       case 'void':
         if (window.confirm(`Void invoice ${inv.number}?`)) {

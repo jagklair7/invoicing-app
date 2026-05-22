@@ -1245,18 +1245,31 @@ async function saveChanges() {
       </div>
     </>
   )
-  async function handleExportPDF() {
-  setExporting(true)
-  try {
-    await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
-  } catch (err) {
-    alert('PDF export failed: ' + err.message)
-  } finally {
-    setExporting(false)
+  async function markInvoiceSent() {
+    if (invoice.status !== 'draft') return
+    await supabase
+      .from('invoices')
+      .update({ status: 'sent' })
+      .eq('id', id)
+      .eq('org_id', activeOrg.orgId)
+    setInvoice(prev => ({ ...prev, status: 'sent' }))
+    setEditStatus('sent')
   }
-}
-if (loading) return <div className="inv-root"><div className="inv-loading"><div className="inv-spinner" /></div></div>
-const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_type !== 'none');
+
+  async function handleExportPDF() {
+    setExporting(true)
+    try {
+      await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
+      await markInvoiceSent()
+    } catch (err) {
+      alert('PDF export failed: ' + err.message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  if (loading) return <div className="inv-root"><div className="inv-loading"><div className="inv-spinner" /></div></div>
+  const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_type !== 'none');
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
