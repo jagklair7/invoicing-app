@@ -132,16 +132,13 @@ export async function exportInvoicePDF(invoice, customer, items, orgId) {
   let y = 0  // current Y cursor
 
 
-  // ── 1. Header band ─────────────────────────────────────────────────────────
-  const headerH = 42
-  // Check: Is C.slate defined as an array [146, 201, 192]?
-if (C.slate) {
-  setColor(doc, C.slate, 'fill');
-  //setColor(doc, C.deepTeal, 'fill'); // Use the new deepTeal color for the header background
-} else {
-  doc.setFillColor(146, 201, 192); // Hardcoded fallback to prevent crash
-}
-  doc.rect(0, 0, pw, headerH, 'F')
+  // ── 1. Header area ─────────────────────────────────────────────────────────
+  const headerH = 36
+
+  // Top divider line for a clean header layout
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.25)
+  doc.line(ml, headerH - 2, pw - mr, headerH - 2)
 
   // Try to load logo
   const logo = await loadImage(COMPANY.logo)
@@ -157,22 +154,21 @@ if (C.slate) {
     // Fallback: text logo
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
-    setColor(doc, C.white)
+    setColor(doc, C.text)
     doc.text(COMPANY.name, ml, 16)
   }
 
   // "INVOICE" label — right side of header
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  setColor(doc, C.teal)
+  setColor(doc, C.text)
  // setColor(doc, C.gold) 
   doc.text('INVOICE', pw - mr, 16, { align: 'right' })
 
   // Invoice number under it
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  //setColor(doc, [148, 163, 184])  // slate-400
-  setColor(doc, [232, 245, 245])
+  setColor(doc, C.muted)
   doc.text('Invoice No.', pw - mr, 23, { align: 'right' })
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
