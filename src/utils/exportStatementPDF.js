@@ -66,10 +66,11 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
 
   let y = 0
 
-  // ── Header band ────────────────────────────────────────────────────────────
-  const headerH = 42
-  setColor(doc, C.slate, 'fill')
-  doc.rect(0, 0, pw, headerH, 'F')
+  // ── Header area ────────────────────────────────────────────────────────────
+  const headerH = 36
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.25)
+  doc.line(ml, headerH - 2, pw - mr, headerH - 2)
 
   const logo = await loadImage(COMPANY.logo)
   if (logo) {
@@ -81,20 +82,20 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
   } else {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(16)
-    setColor(doc, C.white)
+    setColor(doc, C.text)
     doc.text(COMPANY.name, ml, 16)
   }
 
   // "STATEMENT" label
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
-  setColor(doc, C.white)
+  setColor(doc, C.text)
   doc.text('STATEMENT', pw - mr, 16, { align: 'right' })
 
   // Period label
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  setColor(doc, C.light)
+  setColor(doc, C.muted)
   doc.text(`Period: ${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`, pw - mr, 24, { align: 'right' })
   doc.text(`Prepared: ${fmtDate(new Date().toISOString().split('T')[0])}`, pw - mr, 29, { align: 'right' })
 
@@ -121,8 +122,17 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
   y += 4;   doc.text(COMPANY.phone,   ml, y)
 
   // BILL TO (middle col)
-  const col2x = ml + cw * 0.38
+  const col2x = ml + cw * 0.30
   let ry = headerH + 10
+
+  const col3x = ml + cw * 0.70
+  const billToWidth = col3x - col2x - 3
+
+  const wrapText = (text, x, y, width, lineHeight = 4.5) => {
+    const lines = doc.splitTextToSize(text, width)
+    doc.text(lines, x, y)
+    return lines.length * lineHeight
+  }
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
@@ -133,16 +143,16 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   setColor(doc, C.text)
-  doc.text(customer?.name || '—', col2x, ry)
+  ry += wrapText(customer?.name || '—', col2x, ry, billToWidth)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   setColor(doc, C.muted)
-  if (customer?.email)   { ry += 4.5; doc.text(customer.email,   col2x, ry) }
-  if (customer?.phone)   { ry += 4;   doc.text(customer.phone,   col2x, ry) }
-  if (customer?.address) { ry += 4;   doc.text(customer.address, col2x, ry) }
+  if (customer?.email)   { ry += 2; ry += wrapText(customer.email,   col2x, ry, billToWidth) }
+  if (customer?.phone)   { ry += 2; ry += wrapText(customer.phone,   col2x, ry, billToWidth) }
+  if (customer?.address) { ry += 2; ry += wrapText(customer.address, col2x, ry, billToWidth) }
   const cityLine = [customer?.city, customer?.province, customer?.postal_code].filter(Boolean).join(', ')
-  if (cityLine) { ry += 4; doc.text(cityLine, col2x, ry) }
+  if (cityLine) { ry += 2; ry += wrapText(cityLine, col2x, ry, billToWidth) }
 
   // ACCOUNT SUMMARY (right col — 3 boxes)
   const today = new Date(); today.setHours(0,0,0,0)
@@ -153,7 +163,6 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
     .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
     .reduce((s, i) => s + Number(i.total || 0), 0)
 
-  const col3x   = ml + cw * 0.68
   const boxW    = (pw - mr - col3x) / 3 - 1.5
   let   by      = headerH + 10
   const summaryItems = [
@@ -164,9 +173,7 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
 
   summaryItems.forEach((item, i) => {
     const bx = col3x + i * (boxW + 1.5)
-    // Box bg
-    doc.setFillColor(248, 250, 252)
-    doc.roundedRect(bx, by, boxW, 16, 1.5, 1.5, 'F')
+    // Box border only for a cleaner look
     doc.setDrawColor(...C.border)
     doc.setLineWidth(0.2)
     doc.roundedRect(bx, by, boxW, 16, 1.5, 1.5, 'S')

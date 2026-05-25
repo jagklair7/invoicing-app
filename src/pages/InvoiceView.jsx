@@ -8,6 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { calcLineTotal, calcLineDiscount } from '../utils/discount'
 import { useOrg } from '../context/OrgContext'
+import PayNowButton from '../components/PayNowButton'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
@@ -293,7 +294,7 @@ const css = `
     padding: 14px 12px;
     border-bottom: 1px solid #f1f5f9;
     vertical-align: middle;
-    word-break: break-word;   /* ← add this */
+    word-break: break-word;
   }
 
   .inv-table tbody tr:last-child td { border-bottom: none; }
@@ -307,8 +308,8 @@ const css = `
     font-size: 14px;
     color: var(--slate);
     font-weight: 400;
-    word-break: break-word;   /* ← add this */
-    white-space: pre-wrap;    /* ← preserves line breaks (Enter key) */
+    word-break: break-word;
+    white-space: pre-wrap;
   }
 
   .inv-item-num {
@@ -378,6 +379,7 @@ const css = `
     margin: 4px 0;
   }
 
+
   /* ── Footer note ── */
   .inv-footer-note {
     margin-top: 36px;
@@ -417,7 +419,6 @@ const css = `
     50%       { opacity: 0.5; transform: scale(0.85); }
   }
 
-  /* Edit fields */
   .inv-field {
     display: flex;
     flex-direction: column;
@@ -458,7 +459,6 @@ const css = `
     cursor: pointer;
   }
 
-  /* Edit meta row */
   .inv-edit-meta {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -475,7 +475,6 @@ const css = `
     align-content: start;
   }
 
-  /* Line items edit */
   .inv-items-header {
     display: flex;
     align-items: center;
@@ -555,7 +554,6 @@ const css = `
   }
   .inv-add-item:hover { background: #d0eeef; border-color: var(--teal); }
 
-  /* Edit totals */
   .inv-edit-totals {
     margin-top: 20px;
     padding: 16px 20px;
@@ -568,7 +566,6 @@ const css = `
     gap: 7px;
   }
 
-  /* Column headers for item edit */
   .inv-items-cols {
     display: grid;
     grid-template-columns: 1fr 90px 110px 36px;
@@ -617,43 +614,29 @@ const css = `
   }
 
   /* ── Print ── */
-@media print {
-  /* Hide everything on the page */
-  body * {
-    visibility: hidden;
+  @media print {
+    body * { visibility: hidden; }
+    .inv-card, .inv-card * { visibility: visible; }
+    .inv-card {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      margin: 0;
+      box-shadow: none;
+      border-radius: 0;
+      border: none;
+    }
+    .inv-header {
+      background: #1e293b !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .inv-total-row--grand .inv-total-value {
+      color: #0d7377 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
   }
-
-  /* Then reveal only the invoice card and its children */
-  .inv-card,
-  .inv-card * {
-    visibility: visible;
-  }
-
-  /* Pin the card to fill the printed page */
-  .inv-card {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    margin: 0;
-    box-shadow: none;
-    border-radius: 0;
-    border: none;
-  }
-
-  /* Force the dark header to print with its background color */
-  .inv-header {
-    background: #1e293b !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  /* Make sure teal total prints correctly */
-  .inv-total-row--grand .inv-total-value {
-    color: #0d7377 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
 
   /* ── Responsive ── */
   @media (max-width: 600px) {
@@ -670,100 +653,97 @@ const css = `
     .inv-item-row { grid-template-columns: 1fr 70px 90px 28px; }
   }
 
-    /* ── Send modal ── */
-    .inv-modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(15,23,42,0.45);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-      padding: 16px;
-      backdrop-filter: blur(2px);
-    }
-    .inv-modal {
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 24px 48px rgba(0,0,0,0.18);
-      width: 100%;
-      max-width: 460px;
-      overflow: hidden;
-      flex-direction: column;
-      max-height: 90vh;        /* ← prevents modal from exceeding viewport */
-    }
-    .inv-modal-header {
-      background: linear-gradient(135deg, #1e293b 0%, #2d3f55 100%);
-      padding: 20px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .inv-modal-title {
-      font-family: 'Fraunces', Georgia, serif;
-      font-size: 18px;
-      font-weight: 600;
-      color: white;
-      letter-spacing: -0.01em;
-    }
-    .inv-modal-close {
-      background: rgba(255,255,255,0.1);
-      border: none;
-      color: white;
-      width: 28px; height: 28px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 16px;
-      display: flex; align-items: center; justify-content: center;
-      transition: background .15s;
-    }
-    .inv-modal-close:hover { background: rgba(255,255,255,0.2); }
-    
-    .inv-modal-body {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      overflow-y: auto;        /* ← body scrolls if content is too tall */
-      flex: 1;                 /* ← takes remaining space between header and footer */
-    }
-    .inv-modal-footer {
-      padding: 16px 24px;
-      border-top: 1px solid #f1f5f9;
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-      align-items: center;
-      background: #fff;
-    }
-    .inv-send-success {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: #e8f5f5;
-      border: 1px solid #b2e0e2;
-      border-radius: 10px;
-      padding: 14px 16px;
-      font-size: 13px;
-      color: #0d7377;
-      font-weight: 500;
-    }
-    .inv-send-error {
-      background: #fff5f5;
-      border: 1px solid #fecaca;
-      border-radius: 10px;
-      padding: 14px 16px;
-      font-size: 13px;
-      color: #e53e3e;
-    }
-
+  /* ── Send modal ── */
+  .inv-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 16px;
+    backdrop-filter: blur(2px);
+  }
+  .inv-modal {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.18);
+    width: 100%;
+    max-width: 460px;
+    overflow: hidden;
+    flex-direction: column;
+    max-height: 90vh;
+  }
+  .inv-modal-header {
+    background: linear-gradient(135deg, #1e293b 0%, #2d3f55 100%);
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .inv-modal-title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: white;
+    letter-spacing: -0.01em;
+  }
+  .inv-modal-close {
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: white;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .inv-modal-close:hover { background: rgba(255,255,255,0.2); }
+  .inv-modal-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .inv-modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+    background: #fff;
+  }
+  .inv-send-success {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #e8f5f5;
+    border: 1px solid #b2e0e2;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: #0d7377;
+    font-weight: 500;
+  }
+  .inv-send-error {
+    background: #fff5f5;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: #e53e3e;
+  }
 `
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
 const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 const today = () => new Date().toISOString().split('T')[0]
-
 
 const STATUS_LABELS = { draft: 'Draft', sent: 'Sent', paid: 'Paid', void: 'Void' }
 
@@ -784,46 +764,46 @@ export default function InvoiceView() {
   const { id } = useParams()
   const navigate = useNavigate()
 
-  const [invoice, setInvoice]       = useState({
-    number: '', // Will be filled by user or auto-gen logic
+  const [invoice, setInvoice] = useState({
+    number: '',
     date: new Date().toISOString().split('T')[0],
     status: 'draft',
-    //notes: '',   // ← add this
-    // ... other fields
   })
 
-  const [customer, setCustomer]     = useState(null)
-  const [items, setItems]           = useState([])
+  const [customer, setCustomer]       = useState(null)
+  const [items, setItems]             = useState([])
   const [orgSettings, setOrgSettings] = useState(null)
-  const [loading, setLoading]       = useState(true)
-  const [isEditing, setIsEditing]   = useState(false)
-  const [saving, setSaving]         = useState(false)
-  const [exporting, setExporting]   = useState(false)
+  const [loading, setLoading]         = useState(true)
+  const [isEditing, setIsEditing]     = useState(false)
+  const [saving, setSaving]           = useState(false)
+  const [exporting, setExporting]     = useState(false)
   const [duplicating, setDuplicating] = useState(false)
-  const [editPO, setEditPO] = useState('')
+  const [editPO, setEditPO]           = useState('')
 
-  // For Sending Emails
-  const [sending, setSending]         = useState(false)
+  // Send email
+  const [sending, setSending]             = useState(false)
   const [showSendModal, setShowSendModal] = useState(false)
-  const [sendEmail, setSendEmail]     = useState('')
-  const [sendNote, setSendNote]       = useState('')
-  const [sendResult, setSendResult]   = useState(null) // 'success' | 'error'
+  const [sendEmail, setSendEmail]         = useState('')
+  const [sendNote, setSendNote]           = useState('')
+  const [sendResult, setSendResult]       = useState(null)
+
+  // Pay Now (in-house)
+  const [showPayModal, setShowPayModal] = useState(false)
 
   // Edit state
-  const [editNumber, setEditNumber] = useState('') // Specifically for the editable Invoice No. field
+  const [editNumber, setEditNumber] = useState('')
   const [editStatus, setEditStatus] = useState('draft')
   const [editDate, setEditDate]     = useState('')
   const [editDue, setEditDue]       = useState('')
   const [editItems, setEditItems]   = useState([])
-  const [editNotes, setEditNotes] = useState('')
-  const [products, setProducts] = useState([])
+  const [editNotes, setEditNotes]   = useState('')
+  const [products, setProducts]     = useState([])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchInvoice() {
-     if (!activeOrg?.orgId) return   // ← add this guard at the top
+    if (!activeOrg?.orgId) return
     try {
       setLoading(true)
-      // Fetch invoice + customer
       const { data, error } = await supabase
         .from('invoices')
         .select('*, customers(*)')
@@ -837,14 +817,12 @@ export default function InvoiceView() {
       setCustomer(data.customers)
       setEditNotes(data.notes || '')
 
-      // After fetching invoice, also fetch org settings
-      const { data: orgSettings } = await supabase
+      const { data: settings } = await supabase
         .from('organization_settings')
-        .select('gst_number, company_name, company_address, company_city, company_phone')
+        .select('gst_number, company_name, company_address, company_city, company_phone, helcim_customer_code')
         .eq('org_id', activeOrg.orgId)
         .single()
-
-      setOrgSettings(orgSettings || null)
+      setOrgSettings(settings || null)
 
       const { data: productList } = await supabase
         .from('products')
@@ -853,24 +831,21 @@ export default function InvoiceView() {
         .order('name')
       setProducts(productList || [])
 
-      // Fetch line items separately ← this is the key fix
-
       const { data: lineItems, error: itemsErr } = await supabase
         .from('invoice_items')
         .select('*')
         .eq('invoice_id', id)
-
       if (itemsErr) throw itemsErr
-      
+
       const fetchedItems = lineItems ?? []
       setItems(fetchedItems)
 
-      // Initialize edit states with fetched data
       setEditNumber(data.number || '')
       setEditStatus(data.status)
       setEditDate(data.date || today())
       setEditDue(data.due_date || '')
       setEditItems(fetchedItems)
+      setEditPO(data.po_number || '')
 
     } catch (err) {
       console.error(err)
@@ -879,182 +854,129 @@ export default function InvoiceView() {
     }
   }
 
-      useEffect(() => {
-        if (activeOrg?.orgId) fetchInvoice()
-      }, [id, activeOrg?.orgId])
+  useEffect(() => {
+    if (activeOrg?.orgId) fetchInvoice()
+  }, [id, activeOrg?.orgId])
 
-      //Send email helper
-        async function handleSendInvoice() {
-          if (!sendEmail.trim()) return
-          setSending(true)
-          setSendResult(null)
-          try {
-            // 1. Generate PDF as base64
-            const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
+  // ── Send email ─────────────────────────────────────────────────────────────
+  async function handleSendInvoice() {
+    if (!sendEmail.trim()) return
+    setSending(true)
+    setSendResult(null)
+    try {
+      const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
 
-            // 2. Build email HTML
-            const html = `
-              <div style="margin:0;padding:0;background:#f1f5f9;">
-                <div style="max-width:640px;margin:0 auto;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
-                  
-                  <div style="background:#1e293b;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
-                    <div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;">
-                      ${orgSettings?.companyname || activeOrg?.name || 'Invoice'}
-                    </div>
-                    <div style="font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;margin:0;">
-                      Invoice ${invoice.number}
-                    </div>
-                    <div style="font-size:14px;color:#cbd5e1;margin-top:8px;">
-                      ${fmt(invoice.total)} due${invoice.duedate ? ` on ${fmtDate(invoice.duedate)}` : ''}
-                    </div>
-                  </div>
-
-                  <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;padding:32px;">
-                    <p style="font-size:16px;line-height:1.6;margin:0 0 18px;">
-                      Hi ${customer?.name || 'there'},
-                    </p>
-
-                    <p style="font-size:14px;line-height:1.7;color:#475569;margin:0 0 24px;">
-                      Please find your invoice attached. A summary is included below for quick reference.
-                    </p>
-
-                    <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 24px;">
-                      <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
-                        <span style="font-size:13px;color:#64748b;">Invoice</span>
-                        <span style="font-size:13px;font-weight:600;color:#1e293b;">${invoice.number}</span>
-                      </div>
-                      <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;">
-                        <span style="font-size:13px;color:#64748b;">Amount Due</span>
-                        <span style="font-size:16px;font-weight:700;color:#0d7377;">${fmt(invoice.total)}</span>
-                      </div>
-                      ${
-                        invoice.duedate
-                          ? `
-                      <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;">
-                        <span style="font-size:13px;color:#64748b;">Due Date</span>
-                        <span style="font-size:13px;font-weight:600;color:#1e293b;">${fmtDate(invoice.duedate)}</span>
-                      </div>
-                      {/* Add this: */}
-                        {invoice?.po_number && (
-                          <div className="inv-date-row">
-                            <span className="inv-date-label">PO #</span>
-                            <span className="inv-date-value">{invoice.po_number}</span>
-                          </div>
-                        )}`
-                          : ''
-                      }
-                    </div>
-
-                    ${
-                      sendNote
-                        ? `
-                    <div style="background:#f8fafc;border-left:4px solid #0d7377;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
-                      <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">
-                        Personal note
-                      </div>
-                      <div style="font-size:14px;line-height:1.7;color:#334155;white-space:pre-wrap;">
-                        ${sendNote}
-                      </div>
-                    </div>`
-                        : ''
-                    }
-
-                    <div style="text-align:center;margin:28px 0 24px;">
-                        <a
-                          href="mailto:info@klair.ca"
-                          style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
-                        >
-                          Contact us
-                        </a>
-                      </div>
-
-                    <p style="font-size:13px;line-height:1.7;color:#64748b;margin:0;">
-                      If you have any questions, please reply to this email and we’ll be happy to help.
-                    </p>
-
-                    <div style="margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#94a3b8;">
-                      <div style="font-weight:600;color:#475569;margin-bottom:4px;">
-                        ${orgSettings?.companyname || activeOrg?.name || 'Your Company'}
-                      </div>
-                      ${
-                        orgSettings?.companyphone
-                          ? `<div>${orgSettings.companyphone}</div>`
-                          : ''
-                      }
-                      ${
-                        orgSettings?.companyemail
-                          ? `<div>${orgSettings.companyemail}</div>`
-                          : ''
-                      }
-                      ${
-                        orgSettings?.companyaddress
-                          ? `<div>${orgSettings.companyaddress}</div>`
-                          : ''
-                      }
-                      ${
-                        orgSettings?.gstnumber
-                          ? `<div style="margin-top:6px;">GST: ${orgSettings.gstnumber}</div>`
-                          : ''
-                      }
-                    </div>
-                  </div>
+      const html = `
+        <div style="margin:0;padding:0;background:#f1f5f9;">
+          <div style="max-width:640px;margin:0 auto;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+            <div style="background:#1e293b;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+              <div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;">
+                ${orgSettings?.companyname || activeOrg?.name || 'Invoice'}
+              </div>
+              <div style="font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;margin:0;">
+                Invoice ${invoice.number}
+              </div>
+              <div style="font-size:14px;color:#cbd5e1;margin-top:8px;">
+                ${fmt(invoice.total)} due${invoice.duedate ? ` on ${fmtDate(invoice.duedate)}` : ''}
+              </div>
+            </div>
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;padding:32px;">
+              <p style="font-size:16px;line-height:1.6;margin:0 0 18px;">Hi ${customer?.name || 'there'},</p>
+              <p style="font-size:14px;line-height:1.7;color:#475569;margin:0 0 24px;">
+                Please find your invoice attached. A summary is included below for quick reference.
+              </p>
+              <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 24px;">
+                <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+                  <span style="font-size:13px;color:#64748b;">Invoice</span>
+                  <span style="font-size:13px;font-weight:600;color:#1e293b;">${invoice.number}</span>
                 </div>
-              </div>     
-           `
-            // 3. Call Edge Function
-            const { data: { session } } = await supabase.auth.getSession()
-            const res = await fetch(
-              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invoice`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type':  'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                  to:        sendEmail.trim(),
-                  subject:   `Invoice ${invoice.number} from ${orgSettings?.company_name || activeOrg?.name}`,
-                  html,
-                  pdfBase64,
-                  filename,
-                })
-              }
-            )
+                <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;">
+                  <span style="font-size:13px;color:#64748b;">Amount Due</span>
+                  <span style="font-size:16px;font-weight:700;color:#0d7377;">${fmt(invoice.total)}</span>
+                </div>
+                ${invoice.duedate ? `
+                <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;">
+                  <span style="font-size:13px;color:#64748b;">Due Date</span>
+                  <span style="font-size:13px;font-weight:600;color:#1e293b;">${fmtDate(invoice.duedate)}</span>
+                </div>` : ''}
+              </div>
+              ${sendNote ? `
+              <div style="background:#f8fafc;border-left:4px solid #0d7377;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
+                <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Personal note</div>
+                <div style="font-size:14px;line-height:1.7;color:#334155;white-space:pre-wrap;">${sendNote}</div>
+              </div>` : ''}
+              <div style="text-align:center;margin:28px 0 24px;">
+                <a href="mailto:info@klair.ca" style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;">
+                  Contact us
+                </a>
+              </div>
+              <p style="font-size:13px;line-height:1.7;color:#64748b;margin:0;">
+                If you have any questions, please reply to this email and we'll be happy to help.
+              </p>
+              <div style="margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#94a3b8;">
+                <div style="font-weight:600;color:#475569;margin-bottom:4px;">${orgSettings?.companyname || activeOrg?.name || 'Your Company'}</div>
+                ${orgSettings?.companyphone ? `<div>${orgSettings.companyphone}</div>` : ''}
+                ${orgSettings?.companyemail ? `<div>${orgSettings.companyemail}</div>` : ''}
+                ${orgSettings?.companyaddress ? `<div>${orgSettings.companyaddress}</div>` : ''}
+                ${orgSettings?.gstnumber ? `<div style="margin-top:6px;">GST: ${orgSettings.gstnumber}</div>` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+      `
 
-            const result = await res.json()
-            if (!res.ok) throw new Error(result.error?.message || JSON.stringify(result.error))
-
-            // 4. Mark invoice as sent if it was draft
-            if (invoice.status === 'draft') {
-              await supabase
-                .from('invoices')
-                .update({ status: 'sent' })
-                .eq('id', id)
-                .eq('org_id', activeOrg.orgId)
-              await fetchInvoice()
-            }
-
-            setSendResult('success')
-          } catch (err) {
-            console.error(err)
-            setSendResult('error: ' + err.message)
-          } finally {
-            setSending(false)
-          }
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invoice`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            to: sendEmail.trim(),
+            subject: `Invoice ${invoice.number} from ${orgSettings?.company_name || activeOrg?.name}`,
+            html,
+            pdfBase64,
+            filename,
+          })
         }
+      )
+
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error?.message || JSON.stringify(result.error))
+
+      if (invoice.status === 'draft') {
+        await supabase
+          .from('invoices')
+          .update({ status: 'sent' })
+          .eq('id', id)
+          .eq('org_id', activeOrg.orgId)
+        await fetchInvoice()
+      }
+
+      setSendResult('success')
+    } catch (err) {
+      console.error(err)
+      setSendResult('error: ' + err.message)
+    } finally {
+      setSending(false)
+    }
+  }
 
   // ── Edit helpers ───────────────────────────────────────────────────────────
   function addItem() {
-  setEditItems(prev => [...prev, { 
-    id: `new-${Date.now()}`, 
-    product_id: '',
-    name: '', 
-    quantity: '', 
-    unit_price: '',
-    discount_type: 'none',
-    discount_value: 0,
+    setEditItems(prev => [...prev, {
+      id: `new-${Date.now()}`,
+      product_id: '',
+      name: '',
+      quantity: '',
+      unit_price: '',
+      discount_type: 'none',
+      discount_value: 0,
     }])
-}
+  }
 
   function removeItem(idx) {
     setEditItems(prev => prev.filter((_, i) => i !== idx))
@@ -1065,17 +987,17 @@ export default function InvoiceView() {
   }
 
   function handleProductSelect(idx, productId) {
-  const product = products.find(p => p.id === productId)
-  setEditItems(prev => prev.map((it, i) => {
-    if (i !== idx) return it
-    return {
-      ...it,
-      product_id:  productId,
-      name:        product?.description || '',
-      unit_price:  product?.unit_price  || 0,
-    }
-  }))
-}
+    const product = products.find(p => p.id === productId)
+    setEditItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it
+      return {
+        ...it,
+        product_id: productId,
+        name: product?.description || '',
+        unit_price: product?.unit_price || 0,
+      }
+    }))
+  }
 
   function cancelEdit() {
     setEditItems(items)
@@ -1088,163 +1010,130 @@ export default function InvoiceView() {
     setEditPO(invoice?.po_number || '')
   }
 
-  // ── Live totals in edit mode ───────────────────────────────────────────────
+  // ── Live totals ────────────────────────────────────────────────────────────
   const editSubtotal = editItems.reduce((s, i) => s + calcLineTotal(i), 0)
   const editTax      = editSubtotal * 0.05
   const editTotal    = editSubtotal + editTax
 
   // ── Save ───────────────────────────────────────────────────────────────────
-  // Replace the end of your saveChanges() function — swap the manual state update for a re-fetch
-async function saveChanges() {
-  setSaving(true)
-  try {
-    //const subtotal = editSubtotal
-    //const tax      = editTax
-    //const total    = editTotal
+  async function saveChanges() {
+    setSaving(true)
+    try {
+      const { error: invErr } = await supabase
+        .from('invoices')
+        .update({
+          number:   editNumber,
+          status:   editStatus,
+          date:     editDate,
+          due_date: editDue || null,
+          subtotal: editSubtotal,
+          tax:      editTax,
+          total:    editTotal,
+          notes:    editNotes,
+          po_number: editPO,
+        })
+        .eq('id', id)
+        .eq('org_id', activeOrg.orgId)
+      if (invErr) throw invErr
 
-    const { error: invErr } = await supabase
-      .from('invoices')
-      .update({
-        number: editNumber, // Save the manual number override 
-        status: editStatus, 
-        date: editDate, 
-        due_date: editDue || null, 
-        subtotal: editSubtotal, 
-        tax: editTax, 
-        total: editTotal,
-        notes: editNotes, 
-        po_number: editPO,
-      })
-      .eq('id', id)
-      .eq('org_id', activeOrg.orgId)
-    if (invErr) throw invErr
-    
-    await supabase
-      .from('invoice_items')
-      .delete()
-      .eq('invoice_id', id)
-    //  .eq('org_id', activeOrg.orgId)
+      await supabase.from('invoice_items').delete().eq('invoice_id', id)
 
-   // const { error: delErr } = await supabase
-   //   .from('invoice_items').delete().eq('invoice_id', id)
-   // if (delErr) throw delErr
+      const validItems = editItems.filter(i =>
+        i.name?.trim() && Number(i.quantity) > 0 && Number(i.unit_price) >= 0
+      )
 
-    const validItems = editItems.filter(i =>
-      i.name?.trim() && Number(i.quantity) > 0 && Number(i.unit_price) >= 0
-    )
+      if (validItems.length > 0) {
+        const { error: insErr } = await supabase
+          .from('invoice_items')
+          .insert(validItems.map(i => ({
+            invoice_id:     id,
+            org_id:         activeOrg.orgId,
+            product_id:     i.product_id || null,
+            name:           i.name.trim(),
+            quantity:       Number(i.quantity),
+            unit_price:     Number(i.unit_price) || 0,
+            discount_type:  i.discount_type || 'none',
+            discount_value: Number(i.discount_value) || 0,
+          })))
+        if (insErr) throw insErr
+      }
 
-    if (validItems.length > 0) {
-      const { error: insErr } = await supabase
-        .from('invoice_items')
-        .insert(validItems.map(i => ({
-          invoice_id:     id,
-          org_id:         activeOrg.orgId,
-          product_id:     i.product_id || null,
-          name:           i.name.trim(),
-          quantity:       Number(i.quantity),
-          unit_price:     Number(i.unit_price) || 0,
-          discount_type:  i.discount_type || 'none',
-          discount_value: Number(i.discount_value) || 0,
-        })))
-      if (insErr) throw insErr
+      setIsEditing(false)
+      await fetchInvoice()
+    } catch (err) {
+      console.error('Save failed:', err)
+      alert('Save failed: ' + err.message)
+    } finally {
+      setSaving(false)
     }
-
-    setIsEditing(false)
-    await fetchInvoice() // ← re-fetch real data with real IDs from Supabase
-
-  } catch (err) {
-    console.error('Save failed:', err)
-    alert('Save failed: ' + err.message)
-  } finally {
-    setSaving(false)
   }
-}
-  // ── Duplicate ───────────────────────────────────────────────────────
+
+  // ── Duplicate ──────────────────────────────────────────────────────────────
   async function duplicateInvoice() {
-  if (!activeOrg?.orgId) return
-  setDuplicating(true)
-  try {
-    // Generate next invoice number
-    const { data: lastInv } = await supabase
-      .from('invoices')
-      .select('number')
-      .eq('org_id', activeOrg.orgId)
-      .order('created_at', { ascending: false })
-      .limit(1)
+    if (!activeOrg?.orgId) return
+    setDuplicating(true)
+    try {
+      const { data: lastInv } = await supabase
+        .from('invoices')
+        .select('number')
+        .eq('org_id', activeOrg.orgId)
+        .order('created_at', { ascending: false })
+        .limit(1)
 
-    const lastNum = lastInv?.[0]?.number
-      ? parseInt(lastInv[0].number.replace(/\D/g, '')) || 0
-      : 0
-    const newNumber = `${String(lastNum + 1).padStart(3, '0')}`
+      const lastNum = lastInv?.[0]?.number
+        ? parseInt(lastInv[0].number.replace(/\D/g, '')) || 0
+        : 0
+      const newNumber = `${String(lastNum + 1).padStart(3, '0')}`
 
-    // Create duplicate invoice
-    const { data: newInv, error: invErr } = await supabase
-      .from('invoices')
-      .insert({
-        org_id:      activeOrg.orgId,
-        customer_id: invoice.customer_id,
-        number:      newNumber,
-        date:        new Date().toISOString().split('T')[0],
-        due_date:    invoice.due_date || null,
-        status:      'draft',              // always starts as draft
-        subtotal:    invoice.subtotal,
-        tax:         invoice.tax,
-        total:       invoice.total,
-        notes:       invoice.notes || null,
-      })
-      .select()
-      .single()
-    if (invErr) throw invErr
+      const { data: newInv, error: invErr } = await supabase
+        .from('invoices')
+        .insert({
+          org_id:      activeOrg.orgId,
+          customer_id: invoice.customer_id,
+          number:      newNumber,
+          date:        new Date().toISOString().split('T')[0],
+          due_date:    invoice.due_date || null,
+          status:      'draft',
+          subtotal:    invoice.subtotal,
+          tax:         invoice.tax,
+          total:       invoice.total,
+          notes:       invoice.notes || null,
+        })
+        .select()
+        .single()
+      if (invErr) throw invErr
 
-    // Copy line items
-    if (items.length > 0) {
-      const { error: itemsErr } = await supabase
-        .from('invoice_items')
-        .insert(items.map(i => ({
-          invoice_id:     newInv.id,
-          org_id:         activeOrg.orgId,
-          name:           i.name,
-          quantity:       i.quantity,
-          unit_price:     i.unit_price,
-          discount_type:  i.discount_type  || 'none',
-          discount_value: i.discount_value || 0,
-        })))
-      if (itemsErr) throw itemsErr
+      if (items.length > 0) {
+        const { error: itemsErr } = await supabase
+          .from('invoice_items')
+          .insert(items.map(i => ({
+            invoice_id:     newInv.id,
+            org_id:         activeOrg.orgId,
+            name:           i.name,
+            quantity:       i.quantity,
+            unit_price:     i.unit_price,
+            discount_type:  i.discount_type  || 'none',
+            discount_value: i.discount_value || 0,
+          })))
+        if (itemsErr) throw itemsErr
+      }
+
+      navigate(`/invoices/${newInv.id}`)
+    } catch (err) {
+      alert('Duplicate failed: ' + err.message)
+    } finally {
+      setDuplicating(false)
     }
-
-    // Navigate to the new duplicate
-    navigate(`/invoices/${newInv.id}`)
-  } catch (err) {
-    alert('Duplicate failed: ' + err.message)
-  } finally {
-    setDuplicating(false)
   }
-}
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   async function deleteInvoice() {
     if (!window.confirm('Delete this invoice? This cannot be undone.')) return
-    await supabase.from('invoices').delete().eq('id', id).eq('org_id', activeOrg.orgId)  
+    await supabase.from('invoices').delete().eq('id', id).eq('org_id', activeOrg.orgId)
     navigate(-1)
   }
 
-  // ── Computed display totals ────────────────────────────────────────────────
-  const subtotal = items.reduce((s, i) => s + calcLineTotal(i), 0)
-  const tax      = subtotal * 0.05
-  const total    = subtotal + tax
-
-  // ── Loading ────────────────────────────────────────────────────────────────
-  if (loading) return (
-    <>
-      <style>{css}</style>
-      <div className="inv-root">
-        <div className="inv-loading">
-          <div className="inv-spinner" />
-          <span style={{ fontSize: 13, color: '#94a3b8' }}>Loading invoice…</span>
-        </div>
-      </div>
-    </>
-  )
+  // ── Mark sent ─────────────────────────────────────────────────────────────
   async function markInvoiceSent() {
     if (invoice.status !== 'draft') return
     await supabase
@@ -1268,8 +1157,26 @@ async function saveChanges() {
     }
   }
 
-  if (loading) return <div className="inv-root"><div className="inv-loading"><div className="inv-spinner" /></div></div>
-  const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_type !== 'none');
+  // ── Computed display totals ────────────────────────────────────────────────
+  const subtotal = items.reduce((s, i) => s + calcLineTotal(i), 0)
+  const tax      = subtotal * 0.05
+  const total    = subtotal + tax
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <>
+      <style>{css}</style>
+      <div className="inv-root">
+        <div className="inv-loading">
+          <div className="inv-spinner" />
+          <span style={{ fontSize: 13, color: '#94a3b8' }}>Loading invoice…</span>
+        </div>
+      </div>
+    </>
+  )
+
+  const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_type !== 'none')
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -1289,19 +1196,12 @@ async function saveChanges() {
                 </button>
                 <button className="inv-btn inv-btn--danger" onClick={deleteInvoice}>Delete</button>
                 <button className="inv-btn inv-btn--ghost" onClick={cancelEdit}>Cancel</button>
-                
               </>
             ) : (
               <>
-                <button
-                  className="inv-btn"
-                  onClick={handleExportPDF}
-                  disabled={exporting}
-                >
+                <button className="inv-btn" onClick={handleExportPDF} disabled={exporting}>
                   {exporting ? 'Generating…' : '↓ Export PDF'}
                 </button>
-
-                {/* ← ADD HERE */}
                 <button
                   className="inv-btn"
                   onClick={() => {
@@ -1313,20 +1213,21 @@ async function saveChanges() {
                 >
                   ✉ Send
                 </button>
-
-                <button                                          // ← ADD THIS
-                  className="inv-btn"
-                  onClick={duplicateInvoice}
-                  disabled={duplicating}
-                >
+                <button className="inv-btn" onClick={duplicateInvoice} disabled={duplicating}>
                   {duplicating ? 'Duplicating…' : '⧉ Duplicate'}
                 </button>
+                {invoice?.status !== 'paid' && invoice?.status !== 'void' && (
+                  <button
+                    className="inv-btn"
+                    style={{ borderColor: '#b2e0e2', color: '#0d7377' }}
+                    onClick={() => setShowPayModal(true)}
+                  >
+                    💳 Charge card
+                  </button>
+                )}
                 <button className="inv-btn inv-btn--primary" onClick={() => setIsEditing(true)}>
                   Edit Invoice
                 </button>
-                {/* <button className="inv-btn--ghost" onClick={() => supabase.auth.signOut()}>
-                 // Logout
-               // </button> */}
               </>
             )}
           </div>
@@ -1335,7 +1236,6 @@ async function saveChanges() {
         {/* Card */}
         <div className="inv-card">
 
-          {/* Edit mode banner */}
           {isEditing && (
             <div className="inv-edit-band">
               <div className="inv-edit-dot" />
@@ -1348,50 +1248,48 @@ async function saveChanges() {
             <div className="inv-brand">
               <div className="inv-brand-name">INVOICE</div>
               <div className="inv-brand-tagline">Tax Invoice</div>
-              {/* GST# */}
-                    {orgSettings?.gst_number && (
-                      <div className="inv-brand-tagline">
-                        <span className="inv-date-label">GST #</span>
-                        <span className="inv-date-value" style={{ color: '#475569' }}>
-                          {orgSettings.gst_number}
-                        </span>
-                      </div>
-                    )}
+              {orgSettings?.gst_number && (
+                <div className="inv-brand-tagline">
+                  <span className="inv-date-label">GST #</span>
+                  <span className="inv-date-value" style={{ color: '#475569' }}>
+                    {orgSettings.gst_number}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="inv-header-right">
               <div>
                 <div className="inv-number-label">Invoice No.</div>
-                 {/* ── CHANGE BLOCK TO Change Invoice Number ── */}   
-                    {isEditing ? (
-                      <input
-                        className="inv-input"
-                        value={editNumber}
-                        onChange={e => setEditNumber(e.target.value)}
-                        style={{
-                          fontSize: 20,
-                          fontFamily: "'Fraunces', Georgia, serif",
-                          fontWeight: 300,
-                          color: 'white',
-                          background: 'rgba(255,255,255,0.1)',
-                          border: '1.5px solid rgba(255,255,255,0.25)',
-                          borderRadius: 8,
-                          padding: '6px 12px',
-                          width: 160,
-                          letterSpacing: '0.02em',
-                        }}
-                      />
-                    ) : (
-                      <div className="inv-number-value">{invoice?.number}</div>
-                    )}
-                  </div>
-                  <StatusBadge
-                    status={invoice?.status}
-                    edit={isEditing}
-                    value={editStatus}
-                    onChange={setEditStatus}
+                {isEditing ? (
+                  <input
+                    className="inv-input"
+                    value={editNumber}
+                    onChange={e => setEditNumber(e.target.value)}
+                    style={{
+                      fontSize: 20,
+                      fontFamily: "'Fraunces', Georgia, serif",
+                      fontWeight: 300,
+                      color: 'white',
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1.5px solid rgba(255,255,255,0.25)',
+                      borderRadius: 8,
+                      padding: '6px 12px',
+                      width: 160,
+                      letterSpacing: '0.02em',
+                    }}
                   />
-                </div>
+                ) : (
+                  <div className="inv-number-value">{invoice?.number}</div>
+                )}
               </div>
+              <StatusBadge
+                status={invoice?.status}
+                edit={isEditing}
+                value={editStatus}
+                onChange={setEditStatus}
+              />
+            </div>
+          </div>
 
           {/* Body */}
           <div className="inv-body">
@@ -1399,9 +1297,7 @@ async function saveChanges() {
             {/* ── View mode ── */}
             {!isEditing && (
               <>
-              
                 <div className="inv-meta-row">
-                  {/* Bill to */}
                   <div>
                     <div className="inv-meta-section-label">Bill To</div>
                     <div className="inv-customer-name">{customer?.name || '—'}</div>
@@ -1411,7 +1307,6 @@ async function saveChanges() {
                       {customer?.address && <div>{customer.address}</div>}
                     </div>
                   </div>
-                  {/* Dates */}
                   <div className="inv-dates-grid">
                     <div className="inv-meta-section-label" style={{ textAlign: 'right' }}>Invoice Details</div>
                     <div className="inv-date-row">
@@ -1422,9 +1317,14 @@ async function saveChanges() {
                       <span className="inv-date-label">Due Date</span>
                       <span className="inv-date-value">{invoice?.due_date ? fmtDate(invoice.due_date) : 'Net 30'}</span>
                     </div>
+                    {invoice?.po_number && (
+                      <div className="inv-date-row">
+                        <span className="inv-date-label">PO #</span>
+                        <span className="inv-date-value">{invoice.po_number}</span>
+                      </div>
+                    )}
                   </div>
-                  
-                  </div>
+                </div>
 
                 {/* Items table */}
                 <div className="inv-table-wrap">
@@ -1449,20 +1349,19 @@ async function saveChanges() {
                           const lineTotal    = calcLineTotal(item)
                           return (
                             <tr key={item.id || i}>
-                             <td>
-  {item.product_id && products.find(p => p.id === item.product_id) && (
-    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 2 }}>
-      {products.find(p => p.id === item.product_id)?.name}
-    </div>
-  )}
-  <div className="inv-item-name" style={{ color: item.product_id ? '#64748b' : '#1e293b' }}>
-    {item.name}
-  </div>
-</td>
+                              <td>
+                                {item.product_id && products.find(p => p.id === item.product_id) && (
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 2 }}>
+                                    {products.find(p => p.id === item.product_id)?.name}
+                                  </div>
+                                )}
+                                <div className="inv-item-name" style={{ color: item.product_id ? '#64748b' : '#1e293b' }}>
+                                  {item.name}
+                                </div>
+                              </td>
                               <td className="inv-item-num">{item.quantity}</td>
                               <td className="inv-item-num">
                                 {fmt(item.unit_price)}
-                                {/* Only show "X% off" if a discount actually exists */}
                                 {item.discount_value > 0 && item.discount_type !== 'none' && (
                                   <div style={{ fontSize: 11, color: '#059669', marginTop: 2 }}>
                                     {item.discount_type === 'percent'
@@ -1472,12 +1371,11 @@ async function saveChanges() {
                                 )}
                               </td>
                               <td className="inv-item-amount">
-                                {/* Only show the struck-through original price if there is a discount */}
                                 {item.discount_value > 0 && item.discount_type !== 'none' && (
-                                  <span style={{ 
-                                    fontSize: 11, color: '#94a3b8', 
-                                    textDecoration: 'line-through', 
-                                    marginRight: 6 
+                                  <span style={{
+                                    fontSize: 11, color: '#94a3b8',
+                                    textDecoration: 'line-through',
+                                    marginRight: 6
                                   }}>
                                     {fmt(lineSubtotal)}
                                   </span>
@@ -1510,28 +1408,14 @@ async function saveChanges() {
                 </div>
 
                 {invoice?.notes && (
-                  <div style={{
-                    marginTop: 28,
-                    paddingTop: 18,
-                    borderTop: '1px dashed #e2e8f0'
-                  }}>
+                  <div style={{ marginTop: 28, paddingTop: 18, borderTop: '1px dashed #e2e8f0' }}>
                     <div style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      letterSpacing: '0.1em',
-                      textTransform: 'uppercase',
-                      color: '#94a3b8',
-                      marginBottom: 8
+                      fontSize: 10, fontWeight: 600, letterSpacing: '0.1em',
+                      textTransform: 'uppercase', color: '#94a3b8', marginBottom: 8
                     }}>
                       Notes
                     </div>
-
-                    <div style={{
-                      fontSize: 13,
-                      color: '#475569',
-                      lineHeight: 1.6,
-                      whiteSpace: 'pre-wrap'
-                    }}>
+                    <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                       {invoice.notes}
                     </div>
                   </div>
@@ -1552,15 +1436,11 @@ async function saveChanges() {
             {isEditing && (
               <>
                 <div className="inv-edit-meta">
-                  {/* Customer (read-only in edit — change via customer page) */}
                   <div>
                     <div className="inv-meta-section-label">Bill To</div>
                     <div className="inv-customer-name">{customer?.name || '—'}</div>
-                    <div className="inv-customer-detail" style={{ fontSize: 12 }}>
-                      {customer?.email}
-                    </div>
+                    <div className="inv-customer-detail" style={{ fontSize: 12 }}>{customer?.email}</div>
                   </div>
-                  {/* Editable date fields */}
                   <div className="inv-edit-meta-right">
                     <div className="inv-field">
                       <label className="inv-field-label">Issue Date</label>
@@ -1587,116 +1467,95 @@ async function saveChanges() {
 
                 {/* Line items */}
                 <div>
-                {/* <div className="inv-items-header">
-                    <span className="inv-items-title">Line Items</span>
-                  </div> */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 70px 100px 110px 36px', gap: 8, marginBottom: 6, padding: '0 2px' }}>
+                    <span className="inv-items-col-label">Product</span>
+                    <span className="inv-items-col-label">Description</span>
+                    <span className="inv-items-col-label inv-items-col-label--r">Qty</span>
+                    <span className="inv-items-col-label inv-items-col-label--r">Unit Price</span>
+                    <span className="inv-items-col-label inv-items-col-label--r">Discount</span>
+                    <span />
+                  </div>
 
-                  {/* Column headers */}
-<div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 70px 100px 110px 36px', gap: 8, marginBottom: 6, padding: '0 2px' }}>
-  <span className="inv-items-col-label">Product</span>
-  <span className="inv-items-col-label">Description</span>
-  <span className="inv-items-col-label inv-items-col-label--r">Qty</span>
-  <span className="inv-items-col-label inv-items-col-label--r">Unit Price</span>
-  <span className="inv-items-col-label inv-items-col-label--r">Discount</span>
-  <span />
-</div>
+                  {editItems.length === 0 && (
+                    <div className="inv-empty-items" style={{ marginBottom: 12 }}>
+                      No items yet — add one below.
+                    </div>
+                  )}
 
-{editItems.length === 0 && (
-  <div className="inv-empty-items" style={{ marginBottom: 12 }}>
-    No items yet — add one below.
-  </div>
-)}
+                  {editItems.map((item, idx) => {
+                    const lineSubtotal = (Number(item.quantity)||0) * (Number(item.unit_price)||0)
+                    const lineDiscount = calcLineDiscount(item)
+                    const lineTotal    = calcLineTotal(item)
+                    return (
+                      <div key={item.id || idx}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 70px 100px 110px 36px', gap: 8, marginBottom: 6, alignItems: 'center' }}>
+                          <select
+                            className="inv-item-input inv-select"
+                            style={{ background: 'white' }}
+                            value={item.product_id || ''}
+                            onChange={e => handleProductSelect(idx, e.target.value)}
+                          >
+                            <option value="">Select…</option>
+                            {products.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                          <input
+                            className="inv-item-input"
+                            placeholder="Description / detail"
+                            value={item.name}
+                            onChange={e => updateItem(idx, 'name', e.target.value)}
+                            style={{ background: 'white' }}
+                          />
+                          <input
+                            className="inv-item-input inv-item-input--num"
+                            type="number" placeholder="1" min="0" step="any"
+                            value={item.quantity}
+                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                            style={{ background: 'white' }}
+                          />
+                          <input
+                            className="inv-item-input inv-item-input--num"
+                            type="number" placeholder="0.00" min="0" step="any"
+                            value={item.unit_price}
+                            onChange={e => updateItem(idx, 'unit_price', e.target.value)}
+                            style={{ background: 'white' }}
+                          />
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <select
+                              className="inv-item-input"
+                              style={{ width: 52, padding: '7px 4px', fontSize: 11, background: 'white' }}
+                              value={item.discount_type || 'none'}
+                              onChange={e => updateItem(idx, 'discount_type', e.target.value)}
+                            >
+                              <option value="none">—</option>
+                              <option value="percent">%</option>
+                              <option value="fixed">$</option>
+                            </select>
+                            {item.discount_type && item.discount_type !== 'none' && (
+                              <input
+                                className="inv-item-input inv-item-input--num"
+                                type="number" placeholder="0" min="0" step="any"
+                                style={{ width: 52, background: 'white' }}
+                                value={item.discount_value || ''}
+                                onChange={e => updateItem(idx, 'discount_value', e.target.value)}
+                              />
+                            )}
+                          </div>
+                          <button className="inv-item-del" onClick={() => removeItem(idx)} title="Remove">×</button>
+                        </div>
+                        {lineDiscount > 0 && (
+                          <div style={{ fontSize: 11, color: '#059669', marginBottom: 4, display: 'flex', gap: 8, justifyContent: 'flex-end', paddingRight: 44 }}>
+                            <span style={{ color: '#94a3b8', textDecoration: 'line-through' }}>{fmt(lineSubtotal)}</span>
+                            <span>−{fmt(lineDiscount)} saved</span>
+                            <span style={{ fontWeight: 600 }}>= {fmt(lineTotal)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
 
-{editItems.map((item, idx) => {
-  const lineSubtotal = (Number(item.quantity)||0) * (Number(item.unit_price)||0)
-  const lineDiscount = calcLineDiscount(item)
-  const lineTotal    = calcLineTotal(item)
-  return (
-    <div key={item.id || idx}>
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 70px 100px 110px 36px', gap: 8, marginBottom: 6, alignItems: 'center' }}>
-        
-        {/* Product dropdown */}
-        <select
-          className="inv-item-input inv-select"
-          style={{ background: 'white' }}
-          value={item.product_id || ''}
-          onChange={e => handleProductSelect(idx, e.target.value)}
-        >
-          <option value="">Select…</option>
-          {products.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-
-        {/* Description */}
-        <input
-          className="inv-item-input"
-          placeholder="Description / detail"
-          value={item.name}
-          onChange={e => updateItem(idx, 'name', e.target.value)}
-          style={{ background: 'white' }}
-        />
-
-        {/* Qty */}
-        <input
-          className="inv-item-input inv-item-input--num"
-          type="number" placeholder="1" min="0" step="any"
-          value={item.quantity}
-          onChange={e => updateItem(idx, 'quantity', e.target.value)}
-          style={{ background: 'white' }}
-        />
-
-        {/* Unit Price */}
-        <input
-          className="inv-item-input inv-item-input--num"
-          type="number" placeholder="0.00" min="0" step="any"
-          value={item.unit_price}
-          onChange={e => updateItem(idx, 'unit_price', e.target.value)}
-          style={{ background: 'white' }}
-        />
-
-        {/* Discount */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          <select
-            className="inv-item-input"
-            style={{ width: 52, padding: '7px 4px', fontSize: 11, background: 'white' }}
-            value={item.discount_type || 'none'}
-            onChange={e => updateItem(idx, 'discount_type', e.target.value)}
-          >
-            <option value="none">—</option>
-            <option value="percent">%</option>
-            <option value="fixed">$</option>
-          </select>
-          {item.discount_type && item.discount_type !== 'none' && (
-            <input
-              className="inv-item-input inv-item-input--num"
-              type="number" placeholder="0" min="0" step="any"
-              style={{ width: 52, background: 'white' }}
-              value={item.discount_value || ''}
-              onChange={e => updateItem(idx, 'discount_value', e.target.value)}
-            />
-          )}
-        </div>
-
-        {/* Delete */}
-        <button className="inv-item-del" onClick={() => removeItem(idx)} title="Remove">×</button>
-      </div>
-
-      {/* Discount savings row */}
-      {lineDiscount > 0 && (
-        <div style={{ fontSize: 11, color: '#059669', marginBottom: 4, display: 'flex', gap: 8, justifyContent: 'flex-end', paddingRight: 44 }}>
-          <span style={{ color: '#94a3b8', textDecoration: 'line-through' }}>{fmt(lineSubtotal)}</span>
-          <span>−{fmt(lineDiscount)} saved</span>
-          <span style={{ fontWeight: 600 }}>= {fmt(lineTotal)}</span>
-        </div>
-      )}
-    </div>
-  )
-})}
-
-                  <button className="inv-add-item" onClick={addItem}>
-                    + Add Line Item
-                  </button>
+                  <button className="inv-add-item" onClick={addItem}>+ Add Line Item</button>
                 </div>
 
                 {/* Live totals */}
@@ -1716,29 +1575,27 @@ async function saveChanges() {
                   </div>
                 </div>
 
-                  <div style={{
-                      marginTop: 20
-                    }}>
-                      <div className="inv-field">
-                        <label className="inv-field-label">Notes</label>
-                        <textarea
-                          className="inv-input"
-                          rows={4}
-                          placeholder="Payment terms, bank details, thank you note..."
-                          value={editNotes}
-                          onChange={(e) => setEditNotes(e.target.value)}
-                          style={{ resize: 'vertical' }}
-                        />
-                      </div>
-                    </div>
-
+                <div style={{ marginTop: 20 }}>
+                  <div className="inv-field">
+                    <label className="inv-field-label">Notes</label>
+                    <textarea
+                      className="inv-input"
+                      rows={4}
+                      placeholder="Payment terms, bank details, thank you note..."
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      style={{ resize: 'vertical' }}
+                    />
+                  </div>
+                </div>
               </>
             )}
 
           </div>
         </div>
-      </div>       {/* closes inv-root */}
-      {/* ── Send Invoice Modal — must be OUTSIDE inv-card and inv-root ── */}
+      </div>
+
+      {/* ── Send Invoice Modal ── */}
       {showSendModal && (
         <div className="inv-modal-overlay" onClick={() => !sending && setShowSendModal(false)}>
           <div className="inv-modal" onClick={e => e.stopPropagation()}>
@@ -1746,7 +1603,6 @@ async function saveChanges() {
               <span className="inv-modal-title">Send Invoice {invoice.number}</span>
               <button className="inv-modal-close" onClick={() => setShowSendModal(false)}>×</button>
             </div>
-
             <div className="inv-modal-body">
               {sendResult === 'success' ? (
                 <div className="inv-send-success">
@@ -1806,14 +1662,23 @@ async function saveChanges() {
               )}
             </div>
             <div className="inv-modal-footer">
-              <button className="inv-btn inv-btn--ghost" onClick={() => setShowSendModal(false)}
-                disabled={sending}>
+              <button className="inv-btn inv-btn--ghost" onClick={() => setShowSendModal(false)} disabled={sending}>
                 {sendResult === 'success' ? 'Close' : 'Cancel'}
               </button>
-
+              {sendResult !== 'success' && invoice?.status !== 'paid' && invoice?.status !== 'void' && (
+                <button
+                  className="inv-btn"
+                  style={{ borderColor: '#b2e0e2', color: '#0d7377' }}
+                  onClick={() => { setShowSendModal(false); setShowPayModal(true) }}
+                  disabled={sending}
+                  title="Collect card payment instead of sending"
+                >
+                  💳 Charge card instead
+                </button>
+              )}
               {sendResult !== 'success' && (
                 <button
-                  className="inv-btn inv-btn--ghost"
+                  className="inv-btn inv-btn--primary"
                   onClick={handleSendInvoice}
                   disabled={sending || !sendEmail.trim()}
                 >
@@ -1822,8 +1687,63 @@ async function saveChanges() {
               )}
             </div>
           </div>
-        </div> 
-      )}    
+        </div>
+      )}
+      {/* ── Pay Now Modal ── */}
+      {showPayModal && (
+        <div className="inv-modal-overlay" onClick={() => setShowPayModal(false)}>
+          <div className="inv-modal" onClick={e => e.stopPropagation()}>
+            <div className="inv-modal-header">
+              <span className="inv-modal-title">Charge card — {invoice.number}</span>
+              <button className="inv-modal-close" onClick={() => setShowPayModal(false)}>×</button>
+            </div>
+            <div className="inv-modal-body">
+              <div style={{
+                background: 'linear-gradient(135deg, #f0fdfe 0%, #e8f5f5 100%)',
+                border: '1.5px solid #b2e0e2',
+                borderRadius: 12,
+                padding: '16px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0d7377' }}>Amount to charge</div>
+                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 600, color: '#1e293b', marginTop: 2 }}>{fmt(total)}</div>
+                  {invoice?.due_date && (
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Due {fmtDate(invoice.due_date)}</div>
+                  )}
+                </div>
+                <div style={{ fontSize: 13, color: '#64748b', textAlign: 'right' }}>
+                  <div style={{ fontWeight: 500 }}>{customer?.name}</div>
+                  <div>{invoice.number}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
+                Clicking <strong>Open payment terminal</strong> will launch the Helcim card reader modal. 
+                The invoice will be automatically marked as <strong>Paid</strong> on successful charge.
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                💡 Use this for in-person or phone payments — not for emailing a payment link to the customer.
+              </div>
+            </div>
+            <div className="inv-modal-footer">
+              <button className="inv-btn inv-btn--ghost" onClick={() => setShowPayModal(false)}>
+                Cancel
+              </button>
+              <PayNowButton
+                invoice={{ ...invoice, total }}
+                customerCode={orgSettings?.helcim_customer_code ?? undefined}
+                onPaid={(updatedInvoice) => {
+                  setInvoice(updatedInvoice)
+                  setEditStatus('paid')
+                  setShowPayModal(false)
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
