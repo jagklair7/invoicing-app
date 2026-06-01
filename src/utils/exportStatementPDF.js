@@ -163,6 +163,22 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
     .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
     .reduce((s, i) => s + Number(i.total || 0), 0)
 
+  const invoiceIds = invoices.map(inv => inv.id).filter(Boolean)
+  const latestPaymentDates = {}
+  if (invoiceIds.length > 0) {
+    const { data: paymentRows } = await supabase
+      .from('invoice_payments')
+      .select('invoice_id, payment_date')
+      .in('invoice_id', invoiceIds)
+      .order('payment_date', { ascending: false })
+
+    ;(paymentRows || []).forEach(row => {
+      if (!latestPaymentDates[row.invoice_id]) {
+        latestPaymentDates[row.invoice_id] = row.payment_date
+      }
+    })
+  }
+
   const boxW    = (pw - mr - col3x) / 3 - 1.5
   let   by      = headerH + 10
   const summaryItems = [
@@ -199,10 +215,11 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
 
   // ── Invoice table ──────────────────────────────────────────────────────────
   const cols = {
-    num:    { x: ml,              w: cw * 0.16 },
-    date:   { x: ml + cw * 0.16, w: cw * 0.17 },
-    due:    { x: ml + cw * 0.33, w: cw * 0.17 },
-    status: { x: ml + cw * 0.50, w: cw * 0.16 },
+    num:    { x: ml,              w: cw * 0.14 },
+    date:   { x: ml + cw * 0.14, w: cw * 0.13 },
+    due:    { x: ml + cw * 0.27, w: cw * 0.13 },
+    status: { x: ml + cw * 0.40, w: cw * 0.12 },
+    paid:   { x: ml + cw * 0.52, w: cw * 0.14 },
     amt:    { x: ml + cw * 0.66, w: cw * 0.17 },
     bal:    { x: ml + cw * 0.83, w: cw * 0.17 },
   }
@@ -222,6 +239,7 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
     ['DATE',      cols.date,   'left'],
     ['DUE DATE',  cols.due,    'left'],
     ['STATUS',    cols.status, 'left'],
+    ['PAID ON',   cols.paid,   'left'],
     ['AMOUNT',    cols.amt,    'right'],
     ['BALANCE',   cols.bal,    'right'],
   ]
@@ -278,6 +296,13 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
     doc.setFontSize(6)
     doc.setTextColor(...sColor)
     doc.text(badgeLabel, bx + badgeW / 2, y + 4.8, { align: 'center' })
+
+    // Paid on
+    const paidOn = latestPaymentDates[inv.id] ? fmtDate(latestPaymentDates[inv.id]) : '—'
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    setColor(doc, C.muted)
+    doc.text(paidOn, cols.paid.x + 1, y + 5.2)
 
     // Amount
     doc.setFont('helvetica', 'bold')
