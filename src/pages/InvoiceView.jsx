@@ -1092,7 +1092,18 @@ export default function InvoiceView() {
           customer_id: invoice.customer_id,
           number:      newNumber,
           date:        new Date().toISOString().split('T')[0],
-          due_date:    invoice.due_date || null,
+          //due_date:    invoice.due_date || null,
+          due_date:    (() => {
+            if (!invoice.due_date) return null
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const orig = new Date(invoice.date)
+            const due  = new Date(invoice.due_date)
+            const offsetDays = Math.round((due - orig) / 86_400_000)
+            const newDue = new Date(today)
+            newDue.setDate(today.getDate() + Math.max(offsetDays, 0))
+            return newDue.toISOString().split('T')[0]
+          })(),
           status:      'draft',
           subtotal:    invoice.subtotal,
           tax:         invoice.tax,
