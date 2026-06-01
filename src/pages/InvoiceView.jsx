@@ -1068,6 +1068,17 @@ export default function InvoiceView() {
     }
   }
 
+  function calcDueDate(invoiceDate, dueDate) {
+  if (!dueDate || !invoiceDate) return null
+  const msPerDay = 86400000
+  const orig = new Date(invoiceDate + 'T12:00:00')
+  const due  = new Date(dueDate + 'T12:00:00')
+  const offsetDays = Math.round((due - orig) / msPerDay)
+  const today = new Date()
+  const newDue = new Date(today.getFullYear(), today.getMonth(), today.getDate() + Math.max(offsetDays, 0))
+  return newDue.toISOString().split('T')[0]
+}
+
   // ── Duplicate ──────────────────────────────────────────────────────────────
   async function duplicateInvoice() {
     if (!activeOrg?.orgId) return
@@ -1093,17 +1104,7 @@ export default function InvoiceView() {
           number:      newNumber,
           date:        new Date().toISOString().split('T')[0],
           //due_date:    invoice.due_date || null,
-          due_date:    (() => {
-            if (!invoice.due_date) return null
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-            const orig = new Date(invoice.date)
-            const due  = new Date(invoice.due_date)
-            const offsetDays = Math.round((due - orig) / 86_400_000)
-            const newDue = new Date(today)
-            newDue.setDate(today.getDate() + Math.max(offsetDays, 0))
-            return newDue.toISOString().split('T')[0]
-          })(),
+          due_date: calcDueDate(invoice.date, invoice.due_date),
           status:      'draft',
           subtotal:    invoice.subtotal,
           tax:         invoice.tax,
