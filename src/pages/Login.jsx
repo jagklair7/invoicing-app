@@ -26,7 +26,12 @@ export default function Login() {
   return (
     <div style={{ maxWidth: '400px', margin: '100px auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#0d7377', textAlign: 'center' }}>Klair Computer Inc.</h2>
-      <p style={{ textAlign: 'center', color: '#64748b' }}>Invoice Management System</p>
+      <p style={{ textAlign: 'center', color: '#64748b' }}>
+        Sign in with your email and password to access your account.
+      </p>
+      <p style={{ textAlign: 'center', color: '#64748b', marginTop: 4, fontSize: 14 }}>
+        New here? Sign up and then create your company to start using the product.
+      </p>
       
       <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '30px' }}>
         <input 
@@ -53,7 +58,7 @@ export default function Login() {
           {loading ? 'Signing in...' : 'Login'}
         </button>
         <p style={{ textAlign: 'center', fontSize: '14px', color: '#64748b' }}>
-          Don't have an account? <Link to="/signup" style={{ color: '#0d7377' }}>Create one</Link>
+          Don't have an account? <Link to="/signup" style={{ color: '#0d7377' }}>Sign up now</Link>.
         </p>
       </form>
     </div>

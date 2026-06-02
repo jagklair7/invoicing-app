@@ -39,7 +39,7 @@ export default function AuthCallback() {
         const user = data.session.user
         await ensureProfileExists(user)
         setStatus('success')
-        setMessage('Your account is now confirmed. Redirecting you to the dashboard…')
+        setMessage('Your account is now confirmed. Redirecting you to setup your company…')
         window.setTimeout(() => navigate('/', { replace: true }), 2000)
         return
       }

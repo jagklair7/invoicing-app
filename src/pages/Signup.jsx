@@ -54,8 +54,7 @@ export default function Signup() {
         <h2 style={{ color: '#0d7377' }}>Check your email</h2>
         <p style={{ color: '#64748b', marginTop: '12px' }}>
           We sent a confirmation link to <strong>{email}</strong>.<br />
-          Click it to activate your account, then{' '}
-          <Link to="/login" style={{ color: '#0d7377' }}>sign in</Link>.
+          Click it to activate your account, then <Link to="/login" style={{ color: '#0d7377' }}>sign in</Link> and create your company.
         </p>
       </div>
     )
@@ -64,7 +63,9 @@ export default function Signup() {
   return (
     <div style={{ maxWidth: '400px', margin: '100px auto', padding: '20px', fontFamily: 'sans-serif' }}>
       <h2 style={{ color: '#0d7377', textAlign: 'center' }}>Klair Computer Inc.</h2>
-      <p style={{ textAlign: 'center', color: '#64748b' }}>Create your account</p>
+      <p style={{ textAlign: 'center', color: '#64748b' }}>
+        Sign up to start your account and create your company.
+      </p>
 
       <form onSubmit={handleSignup} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '30px' }}>
         <input
@@ -103,7 +104,7 @@ export default function Signup() {
         </button>
 
         <p style={{ textAlign: 'center', fontSize: '14px', color: '#64748b' }}>
-          Already have an account? <Link to="/login" style={{ color: '#0d7377' }}>Sign in</Link>
+          Already have an account? <Link to="/login" style={{ color: '#0d7377' }}>Sign in</Link>.
         </p>
       </form>
     </div>
