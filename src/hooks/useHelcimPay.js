@@ -46,9 +46,9 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
 
   // Clean up iFrame and listener
   const cleanup = useCallback(() => {
-    if (typeof window.removeHelcimPayIframe === 'function') {
-      window.removeHelcimPayIframe()
-    }
+    if (typeof window.helcimPay?.remove === 'function') {
+  window.helcimPay.remove()
+}
     if (listenerRef.current) {
       window.removeEventListener('message', listenerRef.current)
       listenerRef.current = null
@@ -114,10 +114,14 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       window.addEventListener('message', handleMessage)
 
       // 4. Open modal
-      if (typeof window.appendHelcimPayIframe !== 'function') {
+      //if (typeof window.appendHelcimPayIframe !== 'function') {
+      //  throw new Error('HelcimPay.js did not load correctly')
+      //}
+      //window.appendHelcimPayIframe(data.checkoutToken)
+      if (typeof window.helcimPay === 'undefined') {
         throw new Error('HelcimPay.js did not load correctly')
       }
-      window.appendHelcimPayIframe(data.checkoutToken)
+      window.helcimPay.init(data.checkoutToken)
     } catch (err) {
       const msg = err.message || 'Payment initialization failed'
       setError(msg)
