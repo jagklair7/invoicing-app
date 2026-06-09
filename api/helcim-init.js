@@ -8,9 +8,8 @@
  * Required env vars (set in Vercel dashboard, never in source):
  *   HELCIM_API_TOKEN   — your Helcim API token from Integrations > API Access
  */
+
 export default async function handler(req, res) {
-  // Safety net — every exit path must return JSON so the client never
-  // sees an empty body and crashes on res.json()
   try {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' })
@@ -29,8 +28,6 @@ export default async function handler(req, res) {
     }
 
     const payload = {
-      console.log('Sending to Helcim:', JSON.stringify(payload))
-      console.log('Token length:', apiToken?.length, 'Token start:', apiToken?.substring(0,6))
       paymentType: 'purchase',
       amount: Number(Number(amount).toFixed(2)),
       currency: 'CAD',
@@ -49,7 +46,6 @@ export default async function handler(req, res) {
       body: JSON.stringify(payload),
     })
 
-    // Helcim occasionally returns non-JSON on unexpected errors — guard against that too
     const text = await helcimRes.text()
     let data
     try {
@@ -60,8 +56,7 @@ export default async function handler(req, res) {
     }
 
     if (!helcimRes.ok) {
-      //console.error('Helcim init error:', data)
-      console.error('Helcim init error FULL:', JSON.stringify(data))
+      console.error('Helcim init error:', JSON.stringify(data))
       const msg = data?.errors?.[0] ?? data?.message ?? 'Helcim initialization failed'
       return res.status(helcimRes.status).json({ error: msg })
     }
