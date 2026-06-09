@@ -64,6 +64,10 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
     try {
       // 1. Load HelcimPay.js script
       await loadHelcimScript()
+      console.log("appendHelcimPayIframe:", window.appendHelcimPayIframe)
+      console.log("removeHelcimPayIframe:", window.removeHelcimPayIframe)
+      console.log("helcimPay:", window.helcimPay)
+      console.log("HelcimPay:", window.HelcimPay)
 
       // 2. Initialize checkout session via our back-end
       const res = await fetch('/api/helcim-init', {
@@ -118,10 +122,12 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       //  throw new Error('HelcimPay.js did not load correctly')
       //}
       //window.appendHelcimPayIframe(data.checkoutToken)
-      if (typeof window.helcimPay === 'undefined') {
-        throw new Error('HelcimPay.js did not load correctly')
-      }
-     // window.helcimPay.init(data.checkoutToken)
+      //if (typeof window.helcimPay === 'undefined') {
+     //   throw new Error('HelcimPay.js did not load correctly')
+     // }
+      if (typeof window.appendHelcimPayIframe !== 'function') {
+  throw new Error('appendHelcimPayIframe was not loaded')
+}
       window.appendHelcimPayIframe(data.checkoutToken)
     } catch (err) {
       const msg = err.message || 'Payment initialization failed'
