@@ -33,7 +33,8 @@ export default async function handler(req, res) {
       currency: 'CAD',
     }
 
-    if (invoiceNumber) payload.invoiceNumber = String(invoiceNumber)
+    // invoiceNumber omitted — Helcim validation is strict about format
+   // if (invoiceNumber) payload.invoiceNumber = String(invoiceNumber)
     if (customerCode)  payload.customerCode  = String(customerCode)
 
     const helcimRes = await fetch('https://api.helcim.com/v2/helcim-pay/initialize', {
