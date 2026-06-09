@@ -91,7 +91,7 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       })
 
       const iframe = document.createElement('iframe')
-      iframe.src = `https://secure.myhelcim.com/helcim-pay/?checkoutToken=${data.checkoutToken}`
+      iframe.src = `https://secure.myhelcim.com/helcim-pay/checkout/?checkoutToken=${data.checkoutToken}`
       iframe.style.cssText = `
         width: 480px; max-width: 95vw;
         height: 620px; max-height: 90vh;
