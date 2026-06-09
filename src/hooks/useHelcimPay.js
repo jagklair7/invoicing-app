@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 // Correct modern Helcim Pay.js V2 Script URL
-const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
+//const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
+const HELCIM_JS_URL = 'https://secure.helcim.app/helcim-pay/services/start.js'
 
 function loadHelcimScript() {
   return new Promise((resolve, reject) => {
@@ -48,24 +49,38 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: Number(amount).toFixed(2),
+          amount: parseFloat(Number(amount).toFixed(2)),
           invoiceNumber: invoiceNumber ?? undefined,
           customerCode: customerCode ?? undefined,
         }),
       })
 
-      const data = await res.json()
+      //const data = await res.json()
 
-      if (!res.ok || !data.checkoutToken) {
-        throw new Error(data.error ?? 'Could not initialize payment token')
-      }
+      // If the response failed or returned an error status code, handle it safely
+        if (!res.ok) {
+          let errorMessage = `Server error: ${res.statusText} (${res.status})`;
+          try {
+            const errorData = await res.json();
+            errorMessage = errorData.error ?? errorMessage;
+          } catch {
+            // If it's not valid JSON, we skip parsing it to avoid crashing
+          }
+          throw new Error(errorMessage);
+        }
+
+        // If it's OK, parse the data safely
+        const data = await res.json();
+        if (!data.checkoutToken) {
+          throw new Error(data.error ?? 'Could not initialize payment');
+        }
 
       secretTokenRef.current = data.secretToken
 
       // 3. Listen for window response messaging
       const handleMessage = (event) => {
         // Match modern v2 container origin
-        if (event.origin !== 'https://js.helcim.com') return
+        if (event.origin !== 'https://secure.helcim.app') return
 
         let payload
         try {
