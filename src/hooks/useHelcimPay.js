@@ -1,23 +1,53 @@
 /**
  * hooks/useHelcimPay.js
  *
- * Opens a HelcimPay checkout by injecting an iframe overlay directly.
- * No external script needed — uses the checkoutToken from /api/helcim-init.
+ * Manages the full HelcimPay.js lifecycle:
+ *   1. Calls /api/helcim-init to get a checkoutToken from the back-end
+ *   2. Loads the HelcimPay.js script once (idempotent)
+ *   3. Renders the payment modal via appendHelcimPayIframe()
+ *   4. Listens for the payment result on the window message event
+ *   5. Calls onSuccess(transaction) or onError(message) accordingly
+ *   6. Cleans up the iFrame on unmount or after a result
+ *
+ * Usage:
+ *   const { openPayment, loading, error } = useHelcimPay({
+ *     amount: invoice.total,
+ *     invoiceNumber: invoice.invoice_number,
+ *     customerCode: org.helcim_customer_code ?? undefined,
+ *     onSuccess: async (txn) => { await markInvoicePaid(invoice.id, txn) },
+ *     onError: (msg) => toast.error(msg),
+ *   })
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 
+const HELCIM_JS_URL = 'https://secure.myhelcim.com/helcim-pay/services/start.js'
+
+function loadHelcimScript() {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${HELCIM_JS_URL}"]`)) {
+      resolve()
+      return
+    }
+    const script = document.createElement('script')
+    script.src = HELCIM_JS_URL
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load HelcimPay.js'))
+    document.head.appendChild(script)
+  })
+}
+
 export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, onError }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const overlayRef = useRef(null)
+  const secretTokenRef = useRef(null)
   const listenerRef = useRef(null)
 
+  // Clean up iFrame and listener
   const cleanup = useCallback(() => {
-    if (overlayRef.current) {
-      overlayRef.current.remove()
-      overlayRef.current = null
-    }
+    if (typeof window.removeHelcimPayIframe === 'function') {
+  window.removeHelcimPayIframe()
+}
     if (listenerRef.current) {
       window.removeEventListener('message', listenerRef.current)
       listenerRef.current = null
@@ -31,36 +61,41 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
     setError('')
 
     try {
-      // 1. Get checkoutToken from backend
+      // 1. Load HelcimPay.js script
+      await loadHelcimScript()
+
+      // 2. Initialize checkout session via our back-end
       const res = await fetch('/api/helcim-init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: parseFloat(Number(amount).toFixed(2)),
+          amount: Number(amount).toFixed(2),
+          invoiceNumber: invoiceNumber ?? undefined,
           customerCode: customerCode ?? undefined,
         }),
       })
 
-      if (!res.ok) {
-        let msg = `Server error: ${res.status}`
-        try { const d = await res.json(); msg = d.error ?? msg } catch {}
-        throw new Error(msg)
-      }
-
       const data = await res.json()
-      if (!data.checkoutToken) {
+
+      if (!res.ok || !data.checkoutToken) {
         throw new Error(data.error ?? 'Could not initialize payment')
       }
 
-      // 2. Listen for payment result
+      secretTokenRef.current = data.secretToken
+
+      // 3. Listen for the payment result BEFORE opening the modal
       const handleMessage = (event) => {
+        // HelcimPay.js posts a JSON string from the secure.myhelcim.com origin
         if (event.origin !== 'https://secure.myhelcim.com') return
 
         let payload
         try {
           payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-        } catch { return }
+        } catch {
+          return
+        }
 
+        // Helcim sends { eventName: 'HELCIM_PAY_JS_RESULT', eventStatus, eventMessage, data }
         if (payload?.eventName !== 'HELCIM_PAY_JS_RESULT') return
 
         cleanup()
@@ -77,33 +112,16 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       listenerRef.current = handleMessage
       window.addEventListener('message', handleMessage)
 
-      // 3. Inject iframe overlay
-      const overlay = document.createElement('div')
-      overlay.style.cssText = `
-        position: fixed; inset: 0; z-index: 9999;
-        background: rgba(0,0,0,0.6);
-        display: flex; align-items: center; justify-content: center;
-      `
-
-      // Close on backdrop click
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) cleanup()
-      })
-
-      const iframe = document.createElement('iframe')
-      iframe.src = `https://secure.myhelcim.com/helcim-pay/checkout/?checkoutToken=${data.checkoutToken}`
-      iframe.style.cssText = `
-        width: 480px; max-width: 95vw;
-        height: 620px; max-height: 90vh;
-        border: none; border-radius: 12px;
-        background: white;
-      `
-      iframe.allow = 'payment'
-
-      overlay.appendChild(iframe)
-      document.body.appendChild(overlay)
-      overlayRef.current = overlay
-
+      // 4. Open modal
+      //if (typeof window.appendHelcimPayIframe !== 'function') {
+      //  throw new Error('HelcimPay.js did not load correctly')
+      //}
+      //window.appendHelcimPayIframe(data.checkoutToken)
+      if (typeof window.helcimPay === 'undefined') {
+        throw new Error('HelcimPay.js did not load correctly')
+      }
+     // window.helcimPay.init(data.checkoutToken)
+      window.appendHelcimPayIframe(data.checkoutToken)
     } catch (err) {
       const msg = err.message || 'Payment initialization failed'
       setError(msg)
@@ -112,7 +130,7 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
     } finally {
       setLoading(false)
     }
-  }, [amount, customerCode, onSuccess, onError, cleanup])
+  }, [amount, invoiceNumber, customerCode, onSuccess, onError, cleanup])
 
   return { openPayment, loading, error }
 }
