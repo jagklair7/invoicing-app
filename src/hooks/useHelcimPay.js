@@ -21,8 +21,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-//const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
-const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
+const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
+//const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
 
 function loadHelcimScript() {
   return new Promise((resolve, reject) => {
@@ -46,8 +46,8 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
 
   // Clean up iFrame and listener
   const cleanup = useCallback(() => {
-    if (typeof window.helcimPay?.remove === 'function') {
-  window.helcimPay.remove()
+    if (typeof window.removeHelcimPayIframe === 'function') {
+  window.removeHelcimPayIframe()
 }
     if (listenerRef.current) {
       window.removeEventListener('message', listenerRef.current)
@@ -121,7 +121,8 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       if (typeof window.helcimPay === 'undefined') {
         throw new Error('HelcimPay.js did not load correctly')
       }
-      window.helcimPay.init(data.checkoutToken)
+     // window.helcimPay.init(data.checkoutToken)
+      window.appendHelcimPayIframe(data.checkoutToken)
     } catch (err) {
       const msg = err.message || 'Payment initialization failed'
       setError(msg)
