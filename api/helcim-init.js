@@ -57,7 +57,8 @@ export default async function handler(req, res) {
 
     if (!helcimRes.ok) {
       console.error('Helcim init error:', JSON.stringify(data))
-      const msg = data?.errors?.[0] ?? data?.message ?? 'Helcim initialization failed'
+      //const msg = data?.errors?.[0] ?? data?.message ?? 'Helcim initialization failed'
+      const msg = JSON.stringify(data)
       return res.status(helcimRes.status).json({ error: msg })
     }
 
