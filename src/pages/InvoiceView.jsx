@@ -800,7 +800,7 @@ export default function InvoiceView() {
   const [products, setProducts]     = useState([])
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-  async function fetchInvoice() {
+  async function fetchInvoice(ignore = false) {
     if (!activeOrg?.orgId) return
     try {
       setLoading(true)
@@ -811,7 +811,7 @@ export default function InvoiceView() {
         .eq('org_id', activeOrg.orgId)
         .single()
       if (error) throw error
-      if (!data) return
+      if (!data || ignore) return   // ← bail if stale
 
       setInvoice(data)
       setCustomer(data.customers)
