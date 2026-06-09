@@ -21,8 +21,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
-//const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
+//const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
+const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
 
 function loadHelcimScript() {
   return new Promise((resolve, reject) => {
@@ -91,8 +91,10 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       // 3. Listen for the payment result BEFORE opening the modal
       const handleMessage = (event) => {
         // HelcimPay.js posts a JSON string from the secure.myhelcim.com origin
-        if (event.origin !== 'https://secure.myhelcim.com') return
-
+      //  if (event.origin !== 'https://secure.myhelcim.com') return
+      
+        // Update this to match the modern Helcim Pay container origin
+        if (event.origin !== 'https://js.helcim.com') return
         let payload
         try {
           payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
