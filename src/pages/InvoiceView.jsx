@@ -854,9 +854,10 @@ export default function InvoiceView() {
     }
   }
 
+ const orgId = activeOrg?.orgId
   useEffect(() => {
-    if (activeOrg?.orgId) fetchInvoice()
-  }, [id, activeOrg?.orgId])
+    if (orgId) fetchInvoice()
+  }, [id, orgId])   // same, but now a stable primitive string, not an object reference
 
   // ── Send email ─────────────────────────────────────────────────────────────
   async function handleSendInvoice() {
