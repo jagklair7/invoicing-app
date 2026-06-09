@@ -21,7 +21,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
+//const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
+const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
 
 function loadHelcimScript() {
   return new Promise((resolve, reject) => {
