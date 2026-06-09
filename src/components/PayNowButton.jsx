@@ -1,60 +1,52 @@
-/**
- * components/PayNowButton.jsx
- *
- * Drop-in "Open payment terminal" button that triggers a HelcimPay.js checkout modal.
- * After a successful payment it:
- *   1. Updates the invoice status to 'paid' in Supabase
- *   2. Records the Helcim transactionId against the invoice
- *   3. Calls the optional onPaid(invoice) callback so parent views can refresh
- *
- * Props:
- *   invoice        — the invoice row object (needs id, total, number, org_id, status)
- *   customerCode   — optional Helcim customerCode for the org (stored in organization_settings)
- *   onPaid         — optional callback fired after DB update with the updated invoice
- */
-
 import { useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useHelcimPay } from '../hooks/useHelcimPay'
 
 export default function PayNowButton({ invoice, customerCode, onPaid }) {
   const [status, setStatus] = useState('idle') // idle | success | error
+  const [localError, setLocalError] = useState('')
 
   const handleSuccess = async (txn) => {
     setStatus('success')
+    setLocalError('')
 
-    const { data: updated, error } = await supabase
+    const { data: updated, error: dbError } = await supabase
       .from('invoices')
       .update({
         status:                'paid',
         paid_at:               new Date().toISOString(),
         helcim_transaction_id: txn?.transactionId   ?? null,
         helcim_card_type:      txn?.cardType        ?? null,
-        helcim_card_number:    txn?.cardNumber       ?? null, // last 4 only
+        helcim_card_number:    txn?.cardNumber       ?? null,
       })
       .eq('id', invoice.id)
       .select()
       .single()
 
-    if (!error && updated) {
+    if (!dbError && updated) {
       onPaid?.(updated)
     }
   }
 
-  const handleError = () => {
+  const handleHookError = (errorMessage) => {
     setStatus('error')
-    setTimeout(() => setStatus('idle'), 4000)
+    setLocalError(errorMessage)
+    // Keep error visible for 5 seconds before clearing status
+    setTimeout(() => {
+      setStatus('idle')
+      setLocalError('')
+    }, 5000)
   }
 
-  const { openPayment, loading, error } = useHelcimPay({
+  const { openPayment, loading } = useHelcimPay({
     amount:        invoice.total,
-    invoiceNumber: invoice.number,   // ← correct field name (not invoice_number)
+    invoiceNumber: invoice.number,
     customerCode,
     onSuccess: handleSuccess,
-    onError:   handleError,
+    onError:   handleHookError,
   })
 
-  // ── Already paid ──────────────────────────────────────────────────────────
+  // ── Render States ──────────────────────────────────────────────────────────
   if (invoice.status === 'paid' || status === 'success') {
     return (
       <span style={{
@@ -69,7 +61,6 @@ export default function PayNowButton({ invoice, customerCode, onPaid }) {
     )
   }
 
-  // ── Button ─────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <button
@@ -103,8 +94,10 @@ export default function PayNowButton({ invoice, customerCode, onPaid }) {
         )}
       </button>
 
-      {status === 'error' && error && (
-        <p style={{ fontSize: 12, color: '#e53e3e', margin: 0 }}>{error}</p>
+      {status === 'error' && localError && (
+        <p style={{ fontSize: 12, color: '#e53e3e', margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
+          {localError}
+        </p>
       )}
     </div>
   )

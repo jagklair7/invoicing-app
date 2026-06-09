@@ -1,27 +1,6 @@
-/**
- * hooks/useHelcimPay.js
- *
- * Manages the full HelcimPay.js lifecycle:
- *   1. Calls /api/helcim-init to get a checkoutToken from the back-end
- *   2. Loads the HelcimPay.js script once (idempotent)
- *   3. Renders the payment modal via appendHelcimPayIframe()
- *   4. Listens for the payment result on the window message event
- *   5. Calls onSuccess(transaction) or onError(message) accordingly
- *   6. Cleans up the iFrame on unmount or after a result
- *
- * Usage:
- *   const { openPayment, loading, error } = useHelcimPay({
- *     amount: invoice.total,
- *     invoiceNumber: invoice.invoice_number,
- *     customerCode: org.helcim_customer_code ?? undefined,
- *     onSuccess: async (txn) => { await markInvoicePaid(invoice.id, txn) },
- *     onError: (msg) => toast.error(msg),
- *   })
- */
-
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-//const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
+// Correct modern Helcim Pay.js V2 Script URL
 const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
 
 function loadHelcimScript() {
@@ -33,7 +12,7 @@ function loadHelcimScript() {
     const script = document.createElement('script')
     script.src = HELCIM_JS_URL
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Failed to load HelcimPay.js'))
+    script.onerror = () => reject(new Error('Failed to load HelcimPay.js. Check your ad-blocker or CSP configuration.'))
     document.head.appendChild(script)
   })
 }
@@ -44,11 +23,10 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
   const secretTokenRef = useRef(null)
   const listenerRef = useRef(null)
 
-  // Clean up iFrame and listener
   const cleanup = useCallback(() => {
     if (typeof window.removeHelcimPayIframe === 'function') {
-  window.removeHelcimPayIframe()
-}
+      window.removeHelcimPayIframe()
+    }
     if (listenerRef.current) {
       window.removeEventListener('message', listenerRef.current)
       listenerRef.current = null
@@ -62,14 +40,10 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
     setError('')
 
     try {
-      // 1. Load HelcimPay.js script
+      // 1. Fetch the script
       await loadHelcimScript()
-      console.log("appendHelcimPayIframe:", window.appendHelcimPayIframe)
-      console.log("removeHelcimPayIframe:", window.removeHelcimPayIframe)
-      console.log("helcimPay:", window.helcimPay)
-      console.log("HelcimPay:", window.HelcimPay)
 
-      // 2. Initialize checkout session via our back-end
+      // 2. Initialize token session from your backend
       const res = await fetch('/api/helcim-init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,18 +57,16 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       const data = await res.json()
 
       if (!res.ok || !data.checkoutToken) {
-        throw new Error(data.error ?? 'Could not initialize payment')
+        throw new Error(data.error ?? 'Could not initialize payment token')
       }
 
       secretTokenRef.current = data.secretToken
 
-      // 3. Listen for the payment result BEFORE opening the modal
+      // 3. Listen for window response messaging
       const handleMessage = (event) => {
-        // HelcimPay.js posts a JSON string from the secure.myhelcim.com origin
-      //  if (event.origin !== 'https://secure.myhelcim.com') return
-      
-        // Update this to match the modern Helcim Pay container origin
+        // Match modern v2 container origin
         if (event.origin !== 'https://js.helcim.com') return
+
         let payload
         try {
           payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
@@ -102,7 +74,6 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
           return
         }
 
-        // Helcim sends { eventName: 'HELCIM_PAY_JS_RESULT', eventStatus, eventMessage, data }
         if (payload?.eventName !== 'HELCIM_PAY_JS_RESULT') return
 
         cleanup()
@@ -119,17 +90,11 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
       listenerRef.current = handleMessage
       window.addEventListener('message', handleMessage)
 
-      // 4. Open modal
-      //if (typeof window.appendHelcimPayIframe !== 'function') {
-      //  throw new Error('HelcimPay.js did not load correctly')
-      //}
-      //window.appendHelcimPayIframe(data.checkoutToken)
-      //if (typeof window.helcimPay === 'undefined') {
-     //   throw new Error('HelcimPay.js did not load correctly')
-     // }
+      // 4. Fire open container sequence
       if (typeof window.appendHelcimPayIframe !== 'function') {
-  throw new Error('appendHelcimPayIframe was not loaded')
-}
+        throw new Error('HelcimPay.js methods not bound to global window object.')
+      }
+      
       window.appendHelcimPayIframe(data.checkoutToken)
     } catch (err) {
       const msg = err.message || 'Payment initialization failed'
