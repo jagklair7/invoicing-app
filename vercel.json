@@ -1,8 +1,6 @@
 {
   "functions": {
-    "api/*.mjs": {
-      "runtime": "nodejs20.x"
-    }
+    "api/*.mjs": {}
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
