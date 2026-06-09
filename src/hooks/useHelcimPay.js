@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 // Correct modern Helcim Pay.js V2 Script URL
 //const HELCIM_JS_URL = 'https://js.helcim.com/helcimPay/index.js'
-const HELCIM_JS_URL = 'https://secure.helcim.app/helcim-pay/services/start.js'
+const HELCIM_JS_URL = 'https://secure.myhelcim.com/js/version2.js'
 
 function loadHelcimScript() {
   return new Promise((resolve, reject) => {
