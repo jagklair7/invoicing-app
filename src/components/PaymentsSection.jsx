@@ -280,7 +280,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
       .select('*')
       .eq('invoice_id', invoiceId)
       .eq('org_id', orgId)
-      .order('paid_at', { ascending: true })
+      .order('payment_date', { ascending: true })
     setPayments(data || [])
     setLoading(false)
   }, [invoiceId, orgId])
@@ -299,8 +299,8 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
           org_id:     orgId,
           amount,
           method:     formMethod,
-          notes:      formNotes.trim() || null,
-          paid_at:    new Date(formDate + 'T12:00:00').toISOString(),
+          note:         formNotes.trim() || null,
+          payment_date: formDate,
         })
         .select()
         .single()
@@ -353,8 +353,8 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
                     <span className="pay-item-method">{METHOD_LABELS[p.method] || p.method}</span>
                     <span className="pay-item-amount">{fmt(p.amount)}</span>
                   </div>
-                  <div className="pay-item-meta">{fmtDateTime(p.paid_at)}</div>
-                  {p.notes && <div className="pay-item-notes">"{p.notes}"</div>}
+                  <div className="pay-item-meta">{fmtDateTime(p.payment_date)}</div>
+                  {p.note && <div className="pay-item-notes">"{p.note}"</div>}
                 </div>
               </div>
             ))}
