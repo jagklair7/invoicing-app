@@ -9,6 +9,7 @@ import { supabase } from '../app/supabaseClient'
 import { calcLineTotal, calcLineDiscount } from '../utils/discount'
 import { useOrg } from '../context/OrgContext'
 import PayNowButton from '../components/PayNowButton'
+import PaymentsSection from '../components/PaymentsSection'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
@@ -391,6 +392,12 @@ const css = `
     letter-spacing: 0.03em;
   }
 
+  <PaymentsSection
+  invoiceId={id}
+  invoiceTotal={total}
+  orgId={activeOrg.orgId}
+  onPaymentAdded={() => fetchInvoice()}
+/>
   /* ══════════════════════════════════════════
      EDIT MODE
   ══════════════════════════════════════════ */
