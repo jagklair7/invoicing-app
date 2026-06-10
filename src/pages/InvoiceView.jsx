@@ -392,12 +392,6 @@ const css = `
     letter-spacing: 0.03em;
   }
 
-  <PaymentsSection
-  invoiceId={id}
-  invoiceTotal={total}
-  orgId={activeOrg.orgId}
-  onPaymentAdded={() => fetchInvoice()}
-/>
   /* ══════════════════════════════════════════
      EDIT MODE
   ══════════════════════════════════════════ */
@@ -1445,7 +1439,14 @@ export default function InvoiceView() {
                   {orgSettings?.gst_number && (
                     <div style={{ marginBottom: 6, fontWeight: 600, color: '#475569', fontSize: 13 }}>
                       GST #: {orgSettings.gst_number}
+                      <PaymentsSection
+                        invoiceId={id}
+                        invoiceTotal={total}
+                        orgId={activeOrg.orgId}
+                        onPaymentAdded={() => fetchInvoice()}
+                      />
                     </div>
+                    
                   )}
                   Thank you for your business.
                 </div>
