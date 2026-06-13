@@ -26,6 +26,9 @@ import Organizations     from './pages/admin/Organizations.jsx'
 import SeedPlans         from './pages/admin/SeedPlans.jsx'
 import { OrgProvider, useOrg } from './context/OrgContext'
 import OrgSwitcher       from './components/OrgSwitcher.jsx'
+import Estimates         from './pages/Estimates.jsx'
+import EstimateForm      from './pages/EstimateForm.jsx'
+import EstimateView      from './pages/EstimateView.jsx'
 
 // ── Guards ────────────────────────────────────────────────────────────────────
 
@@ -134,11 +137,19 @@ export default function App() {
             <OrgGuard session={session}><InvoiceView /></OrgGuard>
           } />
 
-          <Route path="/estimates" element={<Estimates />} />
-          <Route path="/estimates/new" element={<EstimateForm />} />
-          <Route path="/estimates/:id" element={<EstimateView />} />
-          <Route path="/estimates/:id/edit" element={<EstimateForm />} />
-          
+          <Route path="/estimates" element={
+            <OrgGuard session={session}><Estimates /></OrgGuard>
+          } />
+          <Route path="/estimates/new" element={
+            <OrgGuard session={session}><EstimateForm /></OrgGuard>
+          } />
+          <Route path="/estimates/:id" element={
+            <OrgGuard session={session}><EstimateView /></OrgGuard>
+          } />
+          <Route path="/estimates/:id/edit" element={
+            <OrgGuard session={session}><EstimateForm /></OrgGuard>
+          } />
+
           <Route path="/settings" element={
             <OrgGuard session={session}><Settings /></OrgGuard>
           } />
