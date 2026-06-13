@@ -286,10 +286,12 @@ export default function Layout({ children }) {
           {flags.invoices !== false && (
             <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
           )}
-          <NavLink to="/estimates">Estimates</NavLink>
+          {flags.invoices !== false && (
+            <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
+          )}
+          <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
         </nav>
-
-        
+       
 
         {/* Bottom nav */}
         <div style={{ padding: '0 10px 10px', borderTop: '1px solid #f1f5f9', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 2 }}>
