@@ -133,6 +133,12 @@ export default function App() {
           <Route path="/invoices/:id" element={
             <OrgGuard session={session}><InvoiceView /></OrgGuard>
           } />
+
+          <Route path="/estimates" element={<Estimates />} />
+          <Route path="/estimates/new" element={<EstimateForm />} />
+          <Route path="/estimates/:id" element={<EstimateView />} />
+          <Route path="/estimates/:id/edit" element={<EstimateForm />} />
+          
           <Route path="/settings" element={
             <OrgGuard session={session}><Settings /></OrgGuard>
           } />
