@@ -109,6 +109,15 @@ function StatsIcon() {
     </svg>
   )
 }
+function EstIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M5 5h6M5 8h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+      <path d="M5 11h2M9 10l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity=".8"/>
+    </svg>
+  )
+}
 
 // ── rest of the file continues as before...
 
@@ -277,9 +286,10 @@ export default function Layout({ children }) {
           {flags.invoices !== false && (
             <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
           )}
+          <NavLink to="/estimates">Estimates</NavLink>
         </nav>
+
         
-        <NavLink to="/estimates">Estimates</NavLink>
 
         {/* Bottom nav */}
         <div style={{ padding: '0 10px 10px', borderTop: '1px solid #f1f5f9', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 2 }}>
