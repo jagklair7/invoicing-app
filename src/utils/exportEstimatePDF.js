@@ -246,7 +246,8 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
   y += 8
 
   // ── Totals ────────────────────────────────────────────────────────────────────
-  const subtotal = estimate.subtotal || items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
+  const subtotal = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
+  // no tax, no total — subtotal IS the quote total
   const tax      = estimate.tax      || subtotal * 0.05
   const total    = estimate.total    || subtotal + tax
 

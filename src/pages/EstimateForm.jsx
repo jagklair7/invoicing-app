@@ -82,6 +82,7 @@ export default function EstimateForm() {
   }
 
   const subtotal = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
+  // no tax, no total — subtotal IS the quote total
   const tax      = subtotal * 0.05
   const total    = subtotal + tax
 
@@ -125,8 +126,8 @@ export default function EstimateForm() {
       po_number:       estimate.po_number || null,
       line_items:      validItems,
       subtotal,
-      tax,
-      total,
+      tax: 0,          
+      total: subtotal, 
     }
 
     try {
@@ -243,21 +244,15 @@ export default function EstimateForm() {
 
         {/* Totals */}
         <div className="mt-5 pt-4 border-t flex flex-col items-end gap-1.5">
-          <div className="flex gap-10 text-sm">
-            <span className="text-gray-400">Subtotal</span>
-            <span className="text-gray-700 w-24 text-right">${subtotal.toFixed(2)}</span>
-          </div>
-          <div className="flex gap-10 text-sm">
-            <span className="text-gray-400">Tax (5%)</span>
-            <span className="text-gray-700 w-24 text-right">${tax.toFixed(2)}</span>
-          </div>
           <div className="w-36 h-px bg-gray-200 my-1" />
           <div className="flex gap-10">
             <span className="text-sm font-semibold text-gray-700">Total</span>
-            <span className="text-xl font-bold text-gray-900 w-24 text-right">${total.toFixed(2)}</span>
+            <span className="text-xl font-bold text-gray-900 w-24 text-right">${subtotal.toFixed(2)}</span>
+          </div>
+          <div className="flex gap-10 text-xs text-gray-400 italic">
+            <span>+ GST (5%) will be added at time of invoice</span>
           </div>
         </div>
-      </div>
 
       {/* Notes */}
       <div className="bg-white p-6 rounded-2xl border">
