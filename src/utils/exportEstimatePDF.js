@@ -1,6 +1,9 @@
 // src/utils/exportEstimatePDF.js
 // Generates a PDF estimate — identical layout to exportInvoicePDF.js
-// but labelled "ESTIMATE" with expiry date instead of due date.
+// but labelled "ESTIMATE" with:
+//   - No GST/tax calculated (subtotal = total)
+//   - "+GST" notice below total
+//   - Quote-appropriate footer
 import { jsPDF } from 'jspdf'
 import { supabase } from '../app/supabaseClient'
 
@@ -14,6 +17,7 @@ const C = {
   border:    [226, 232, 240],
   white:     [255, 255, 255],
   green:     [5, 150, 105],
+  orange:    [234, 88, 12],
 }
 
 const fmt = (n) =>
@@ -47,7 +51,6 @@ function loadImage(src) {
 }
 
 export async function exportEstimatePDF(estimate, customer, lineItems = [], orgId) {
-  // Fetch org settings
   const { data: orgRow } = await supabase
     .from('organization_settings')
     .select('company_name, company_address, company_city, company_phone, gst_number, company_logo_url')
@@ -64,6 +67,8 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
   }
 
   const items = Array.isArray(lineItems) ? lineItems : []
+  const subtotal = estimate.subtotal
+    || items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
   const pw  = doc.internal.pageSize.getWidth()
@@ -112,12 +117,11 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
 
   y = headerH + 10
 
-  // ── From + Bill To + Dates ───────────────────────────────────────────────────
+  // ── From ────────────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
   setColor(doc, C.teal)
   doc.text('FROM', ml, y)
-
   y += 5
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
@@ -137,12 +141,12 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
     doc.text(`GST #: ${COMPANY.gst}`, ml, y)
   }
 
-  // Bill To
+  // ── Prepared For ────────────────────────────────────────────────────────────
   let ry = headerH + 10
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7)
   setColor(doc, C.teal)
-  doc.text('BILL TO', ml + cw * 0.42, ry)
+  doc.text('PREPARED FOR', ml + cw * 0.42, ry)
   ry += 5
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
@@ -157,12 +161,12 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
   const cityLine = [customer?.city, customer?.province, customer?.postal_code].filter(Boolean).join(', ')
   if (cityLine) { ry += 4; doc.text(cityLine, ml + cw * 0.42, ry) }
 
-  // Dates (right column)
+  // ── Dates ───────────────────────────────────────────────────────────────────
   let dy = headerH + 10
   const col3x = pw - mr
   const dateRows = [
-    ['Issue Date',   fmtDate(estimate.issue_date)],
-    ['Expiry Date',  estimate.expiry_date ? fmtDate(estimate.expiry_date) : '—'],
+    ['Issue Date',  fmtDate(estimate.issue_date)],
+    ['Valid Until', estimate.expiry_date ? fmtDate(estimate.expiry_date) : 'Upon acceptance'],
     ...(estimate.po_number ? [['PO Number', estimate.po_number]] : []),
   ]
   dateRows.forEach(([label, value]) => {
@@ -218,7 +222,7 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
     const descLines = doc.splitTextToSize(String(item.name || ''), cols.desc.w - 2)
     const dynamicRowH = Math.max(rowH, descLines.length * 4.5 + 3)
 
-    if (y + dynamicRowH > ph - 30) { doc.addPage(); y = 20 }
+    if (y + dynamicRowH > ph - 50) { doc.addPage(); y = 20 }
 
     const bg = i % 2 === 0 ? C.white : [248, 250, 252]
     setColor(doc, bg, 'fill')
@@ -245,45 +249,41 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
   doc.line(ml, y, pw - mr, y)
   y += 8
 
-  // ── Totals ────────────────────────────────────────────────────────────────────
-  const subtotal = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
-  // no tax, no total — subtotal IS the quote total
-  const tax      = estimate.tax      || subtotal * 0.05
-  const total    = estimate.total    || subtotal + tax
-
+  // ── Totals (no GST) ───────────────────────────────────────────────────────
   const labelX = pw - mr - 70
   const valueX = pw - mr
 
-  ;[
-    ['Subtotal', fmt(subtotal), false],
-    ['Tax (5%)', fmt(tax),      false],
-    ['Total',    fmt(total),    true ],
-  ].forEach(([label, value, isGrand]) => {
-    if (isGrand) {
-      y += 2
-      setColor(doc, C.tealLight, 'fill')
-      doc.rect(labelX - 4, y - 4, 70 + 4, 10, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(9)
-      setColor(doc, C.teal)
-      doc.text(label, labelX, y + 2)
-      doc.setFontSize(13)
-      doc.text(value, valueX, y + 2.5, { align: 'right' })
-      y += 14
-    } else {
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(8.5)
-      setColor(doc, C.muted)
-      doc.text(label, labelX, y)
-      setColor(doc, C.text)
-      doc.text(value, valueX, y, { align: 'right' })
-      y += 6
-    }
-  })
+  if (items.length > 1) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    setColor(doc, C.muted)
+    doc.text('Subtotal', labelX, y)
+    setColor(doc, C.text)
+    doc.text(fmt(subtotal), valueX, y, { align: 'right' })
+    y += 8
+  }
 
-  // ── Notes ─────────────────────────────────────────────────────────────────────
+  // Grand total strip
+  setColor(doc, C.tealLight, 'fill')
+  doc.rect(labelX - 4, y - 4, 70 + 4, 10, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  setColor(doc, C.teal)
+  doc.text('Estimate Total', labelX, y + 2)
+  doc.setFontSize(13)
+  doc.text(fmt(subtotal), valueX, y + 2.5, { align: 'right' })
+  y += 14
+
+  // +GST notice
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(7.5)
+  setColor(doc, C.orange)
+  doc.text('* Prices are exclusive of GST (5%). GST will be added at time of invoicing.', valueX, y, { align: 'right' })
+  y += 10
+
+  // ── Notes ──────────────────────────────────────────────────────────────────
   if (estimate.notes?.trim()) {
-    y += 6
+    y += 4
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     setColor(doc, C.teal)
@@ -294,30 +294,43 @@ export async function exportEstimatePDF(estimate, customer, lineItems = [], orgI
     setColor(doc, C.muted)
     const lines = doc.splitTextToSize(estimate.notes, pw - ml - mr)
     doc.text(lines, ml, y)
-    y += lines.length * 4
+    y += lines.length * 4.5
   }
 
-  // ── Validity notice ───────────────────────────────────────────────────────────
-  if (estimate.expiry_date) {
-    y += 8
-    doc.setFont('helvetica', 'italic')
-    doc.setFontSize(8)
-    setColor(doc, C.muted)
-    doc.text(`This estimate is valid until ${fmtDate(estimate.expiry_date)}.`, ml, y)
-  }
+  // ── Validity + acceptance notice ───────────────────────────────────────────
+  y += 8
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.2)
+  doc.line(ml, y, pw - mr, y)
+  y += 6
 
-  // ── Footer ────────────────────────────────────────────────────────────────────
-  const footerY = ph - 16
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  setColor(doc, C.muted)
+  const validityText = estimate.expiry_date
+    ? `This estimate is valid until ${fmtDate(estimate.expiry_date)}. Prices are subject to change after this date.`
+    : 'This estimate is valid upon acceptance. Prices are subject to change.'
+  const validityLines = doc.splitTextToSize(validityText, pw - ml - mr)
+  doc.text(validityLines, ml, y)
+
+  // ── Footer ─────────────────────────────────────────────────────────────────
+  const footerY = ph - 18
   doc.setDrawColor(...C.border)
   doc.setLineWidth(0.2)
   doc.line(ml, footerY, pw - mr, footerY)
   doc.setFont('helvetica', 'italic')
-  doc.setFontSize(8)
+  doc.setFontSize(8.5)
+  setColor(doc, C.teal)
+  doc.text(
+    'Thank you for the opportunity to quote. We look forward to working with you.',
+    pw / 2, footerY + 5, { align: 'center' }
+  )
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(7.5)
   setColor(doc, C.light)
-  doc.text('Thank you for considering us.', pw / 2, footerY + 5, { align: 'center' })
-  doc.text(COMPANY.name + '  ·  ' + COMPANY.phone, pw / 2, footerY + 9.5, { align: 'center' })
+  doc.text(COMPANY.name + '  ·  ' + COMPANY.phone, pw / 2, footerY + 10, { align: 'center' })
 
-  // ── Save ──────────────────────────────────────────────────────────────────────
+  // ── Save ───────────────────────────────────────────────────────────────────
   const filename = `${estimate.estimate_number || 'estimate'}-${customer?.name?.replace(/\s+/g, '-') || 'estimate'}.pdf`
   doc.save(filename)
   const pdfBase64 = doc.output('datauristring')

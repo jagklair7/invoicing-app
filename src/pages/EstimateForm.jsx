@@ -83,8 +83,8 @@ export default function EstimateForm() {
 
   const subtotal = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
   // no tax, no total — subtotal IS the quote total
-  const tax      = subtotal * 0.05
-  const total    = subtotal + tax
+ // const tax      = subtotal * 0.05
+ // const total    = subtotal + tax
 
   function handleProductSelect(idx, productId) {
     const product = products.find(p => p.id === productId)
@@ -249,11 +249,11 @@ export default function EstimateForm() {
             <span className="text-sm font-semibold text-gray-700">Total</span>
             <span className="text-xl font-bold text-gray-900 w-24 text-right">${subtotal.toFixed(2)}</span>
           </div>
-          <div className="flex gap-10 text-xs text-gray-400 italic">
-            <span>+ GST (5%) will be added at time of invoice</span>
+          <div style={{ fontSize: 11, color: '#ea580c', fontStyle: 'italic', marginTop: 2 }}>
+            * GST (5%) will be added at time of invoicing
           </div>
         </div>
-
+      </div>
       {/* Notes */}
       <div className="bg-white p-6 rounded-2xl border">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Notes</h3>
