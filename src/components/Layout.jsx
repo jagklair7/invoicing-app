@@ -286,10 +286,9 @@ export default function Layout({ children }) {
           {flags.invoices !== false && (
             <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
           )}
-          {flags.invoices !== false && (
-            <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
-          )}
+          
           <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
+          
         </nav>
        
 
