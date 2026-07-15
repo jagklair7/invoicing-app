@@ -84,17 +84,21 @@ useEffect(() => {
   const total    = subtotal + tax
 
   function handleProductSelect(idx, productId) {
-    const product = products.find(p => p.id === productId)
-    setItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it
-      return {
-        ...it,
-        product_id: productId,
-        name:       product?.description || '',
-        unit_price: product?.unit_price  || 0,
-      }
-    }))
-  }
+  const product = products.find(p => p.id === productId)
+  setItems(prev => prev.map((it, i) => {
+    if (i !== idx) return it
+    return {
+      ...it,
+      product_id: productId,
+      name: product
+        ? (product.description?.trim()
+            ? `${product.name} — ${product.description}`
+            : product.name)
+        : '',
+      unit_price: product?.unit_price || 0,
+    }
+  }))
+}
 
   function updateItem(idx, field, value) {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it))
