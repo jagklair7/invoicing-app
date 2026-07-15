@@ -90,12 +90,8 @@ useEffect(() => {
     return {
       ...it,
       product_id: productId,
-      name: product
-        ? (product.description?.trim()
-            ? `${product.name} — ${product.description}`
-            : product.name)
-        : '',
-      unit_price: product?.unit_price || 0,
+      name:       product?.description || '',
+      unit_price: product?.unit_price  || 0,
     }
   }))
 }
