@@ -989,17 +989,17 @@ export default function InvoiceView() {
   }
 
   function handleProductSelect(idx, productId) {
-    const product = products.find(p => p.id === productId)
-    setEditItems(prev => prev.map((it, i) => {
-      if (i !== idx) return it
-      return {
-        ...it,
-        product_id: productId,
-        name: product?.description || '',
-        unit_price: product?.unit_price || 0,
-      }
-    }))
-  }
+  const product = products.find(p => p.id === productId)
+  setItems(prev => prev.map((it, i) => {   // in InvoiceView.jsx this is setEditItems
+    if (i !== idx) return it
+    return {
+      ...it,
+      product_id: productId,
+      name:       product?.description?.trim() || product?.name || '',
+      unit_price: product?.unit_price || 0,
+    }
+  }))
+}
 
   function cancelEdit() {
     setEditItems(items)

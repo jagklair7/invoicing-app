@@ -83,15 +83,15 @@ useEffect(() => {
   const tax      = subtotal * 0.05
   const total    = subtotal + tax
 
-  function handleProductSelect(idx, productId) {
+function handleProductSelect(idx, productId) {
   const product = products.find(p => p.id === productId)
-  setItems(prev => prev.map((it, i) => {
+  setItems(prev => prev.map((it, i) => {   // in InvoiceView.jsx this is setEditItems
     if (i !== idx) return it
     return {
       ...it,
       product_id: productId,
-      name:       product?.description || '',
-      unit_price: product?.unit_price  || 0,
+      name:       product?.description?.trim() || product?.name || '',
+      unit_price: product?.unit_price || 0,
     }
   }))
 }
