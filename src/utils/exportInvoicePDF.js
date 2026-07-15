@@ -131,6 +131,13 @@ export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
     logo:    orgRow?.company_logo_url || '/icon.png',
   }
 
+  const { data: productList } = await supabase
+  .from('products')
+  .select('id, name')
+  .eq('org_id', orgId)
+
+const productMap = new Map((productList || []).map(p => [p.id, p.name]))
+
  // 2. INITIALIZE DOC FIRST TO AVOID CORS ISSUES WITH LOGO LOADING
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
 
@@ -357,9 +364,12 @@ items.forEach((item, i) => {
   const lineDiscount = calcLineDiscount(item)
   const lineTotal    = calcLineTotal(item)
 
+  const productName = item.product_id ? productMap.get(item.product_id) : null
+
   // Wrap description text to column width
   const descLines = doc.splitTextToSize(String(item.name || ''), cols.desc.w - 2)
-  const dynamicRowH = Math.max(rowH, descLines.length * 4.5 + 3)
+  const productLineH = productName ? 4.2 : 0
+  const dynamicRowH = Math.max(rowH, descLines.length * 4.5 + 3 + productLineH)
 
   // Check if we need a new page
   if (y + dynamicRowH > ph - 30) {
@@ -371,11 +381,22 @@ items.forEach((item, i) => {
   setColor(doc, bg, 'fill')
   doc.rect(ml, y, cw, dynamicRowH, 'F')
 
-  // Description — wrapped, vertically centered
+  let textY = y + 5.2
+
+  // Product name — bold, if this line item is linked to a product
+  if (productName) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    setColor(doc, C.text)
+    doc.text(productName, cols.desc.x + 1, textY)
+    textY += 4.2
+  }
+
+  // Description — wrapped, normal weight
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
-  setColor(doc, C.text)
-  doc.text(descLines, cols.desc.x + 1, y + 5.2)
+  setColor(doc, productName ? C.muted : C.text)
+  doc.text(descLines, cols.desc.x + 1, textY)
 
   // Other columns — vertically centered in dynamic row
   const midY = y + dynamicRowH / 2 + 1.5
