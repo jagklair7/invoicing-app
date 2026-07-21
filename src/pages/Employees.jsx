@@ -18,6 +18,21 @@ const FREQUENCIES = [
   { value: 'monthly', label: 'Monthly' },
 ]
 
+const DEFAULT_FORM = {
+  name: '',
+  email: '',
+  phone: '',
+  pay_type: 'hourly',
+  pay_rate: '0.00',
+  pay_frequency: 'biweekly',
+  province: 'AB',
+  td1_credits: '15705',
+  start_date: '',
+  status: 'active',
+  self_employed: false,
+  ei_exempt: false,
+}
+
 export default function Employees() {
   const { activeOrg } = useOrg()
   const { can, withinLimit, features } = usePlan()
@@ -25,18 +40,7 @@ export default function Employees() {
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    pay_type: 'hourly',
-    pay_rate: '0.00',
-    pay_frequency: 'biweekly',
-    province: 'AB',
-    td1_credits: '15705',
-    start_date: '',
-    status: 'active',
-  })
+  const [formData, setFormData] = useState(DEFAULT_FORM)
 
   useEffect(() => {
     if (activeOrg?.orgId) fetchEmployees()
@@ -99,6 +103,9 @@ export default function Employees() {
       td1_credits: parseFloat(formData.td1_credits) || 15705,
       start_date: formData.start_date || null,
       status: formData.status,
+      self_employed: !!formData.self_employed,
+      // Self-employed workers are never eligible for EI, regardless of the checkbox state
+      ei_exempt: !!formData.self_employed || !!formData.ei_exempt,
     }
 
     try {
@@ -111,11 +118,7 @@ export default function Employees() {
       }
 
       setEditingId(null)
-      setFormData({
-        name: '', email: '', phone: '', pay_type: 'hourly', pay_rate: '0.00',
-        pay_frequency: 'biweekly', province: 'AB', td1_credits: '15705',
-        start_date: '', status: 'active',
-      })
+      setFormData(DEFAULT_FORM)
       fetchEmployees()
     } catch (err) {
       setError(err.message || 'Unable to save employee.')
@@ -137,23 +140,36 @@ export default function Employees() {
       td1_credits: employee.td1_credits?.toString() || '15705',
       start_date: employee.start_date || '',
       status: employee.status || 'active',
+      self_employed: !!employee.self_employed,
+      ei_exempt: !!employee.ei_exempt,
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const cancelEdit = () => {
     setEditingId(null)
-    setFormData({
-      name: '', email: '', phone: '', pay_type: 'hourly', pay_rate: '0.00',
-      pay_frequency: 'biweekly', province: 'AB', td1_credits: '15705',
-      start_date: '', status: 'active',
-    })
+    setFormData(DEFAULT_FORM)
     setError('')
   }
 
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleSelfEmployedChange = (e) => {
+    const checked = e.target.checked
+    setFormData(prev => ({
+      ...prev,
+      self_employed: checked,
+      // Auto-check EI Exempt when marking self-employed — CRA doesn't
+      // collect EI premiums from self-employed individuals
+      ei_exempt: checked ? true : prev.ei_exempt,
+    }))
+  }
+
+  const handleEiExemptChange = (e) => {
+    setFormData(prev => ({ ...prev, ei_exempt: e.target.checked }))
   }
 
   return (
@@ -248,6 +264,42 @@ export default function Employees() {
           </div>
         </div>
 
+        {/* Self-employed / EI exempt */}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-slate-50 px-4 py-3 cursor-pointer hover:border-teal-300 transition">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              checked={formData.self_employed}
+              onChange={handleSelfEmployedChange}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-800">Self-employed</span>
+              <span className="block text-xs text-slate-500 mt-0.5">
+                Pays the full CPP contribution (employee + employer share) and is not eligible for EI.
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-gray-200 bg-slate-50 px-4 py-3 cursor-pointer hover:border-teal-300 transition">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              checked={formData.ei_exempt}
+              disabled={formData.self_employed}
+              onChange={handleEiExemptChange}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-800">EI exempt</span>
+              <span className="block text-xs text-slate-500 mt-0.5">
+                {formData.self_employed
+                  ? 'Automatically applied for self-employed workers.'
+                  : 'For other EI-exempt situations (e.g. family employment, over-65 exclusions).'}
+              </span>
+            </span>
+          </label>
+        </div>
+
         {error && <div className="mt-5 rounded-xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{error}</div>}
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -283,6 +335,18 @@ export default function Employees() {
                 <td className="px-6 py-4">
                   <div className="font-semibold text-slate-900">{employee.name}</div>
                   <div className="text-xs text-slate-500">{employee.email || employee.phone || 'No contact info'}</div>
+                  <div className="mt-1 flex gap-1.5">
+                    {employee.self_employed && (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5">
+                        Self-employed
+                      </span>
+                    )}
+                    {employee.ei_exempt && !employee.self_employed && (
+                      <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5">
+                        EI exempt
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 text-slate-700">${Number(employee.pay_rate).toFixed(2)}</td>
                 <td className="px-6 py-4 text-slate-700">{employee.pay_frequency}</td>

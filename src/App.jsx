@@ -30,6 +30,12 @@ import Estimates         from './pages/Estimates.jsx'
 import EstimateForm      from './pages/EstimateForm.jsx'
 import EstimateView      from './pages/EstimateView.jsx'
 
+import Quotes      from "./pages/Quotes";
+import QuoteForm   from "./pages/QuoteForm";
+import QuoteView   from "./pages/QuoteView";
+import QuotePublic from "./pages/QuotePublic";
+
+
 // ── Guards ────────────────────────────────────────────────────────────────────
 
 function ProtectedRoute({ session, children }) {
@@ -165,6 +171,15 @@ export default function App() {
           <Route path="/organizations" element={
             <SuperAdminRoute session={session}><Organizations /></SuperAdminRoute>
           } />
+
+          {/* Public — no auth wrapper */}
+<Route path="/q/:token" element={<QuotePublic />} />
+
+{/* Protected — inside your auth/org wrapper */}
+<Route path="/quotes"          element={<Quotes />} />
+<Route path="/quotes/new"      element={<QuoteForm />} />
+<Route path="/quotes/:id"      element={<QuoteView />} />
+<Route path="/quotes/:id/edit" element={<QuoteForm />} />
 
           {/* ── Catch-all ────────────────────────────────────────────── */}
           <Route path="*" element={<Navigate to="/" replace />} />

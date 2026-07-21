@@ -1,48 +1,61 @@
 // src/pages/Payroll.jsx
-// 2025 CRA payroll deduction rates — Alberta
+// 2026 CRA payroll deduction rates — Alberta
 // Sources:
 //   CPP:      https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html
-//   EI:       https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/employment-insurance-ei/ei-premium-rates-maximums.html
-//   Federal:  https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4032-payroll-deductions-tables/t4032on-jan/t4032on-january-general-information.html
+//   EI:       https://www.canada.ca/en/employment-social-development/programs/ei/ei-list/reports/premium/rates2026.html
+//   Federal:  https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/income-tax/reducing-remuneration-subject-income-tax.html
 //   Alberta:  https://www.alberta.ca/personal-income-tax
+//   TD1AB 2026 (Basic Personal Amount = $22,769): https://www.canada.ca/en/revenue-agency/services/forms-publications/td1-personal-tax-credits-returns/td1-forms-pay-received-on-january-1-later/td1ab.html
+//
+// NOTE: CPP2 (second CPP tier, earnings between the YMPE and YAMPE) requires two
+// new nullable columns on payroll_entries if you want YTD tracking to work:
+//   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS cpp2 numeric DEFAULT 0;
+//   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS ytd_cpp2 numeric DEFAULT 0;
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { usePlan } from '../context/PlanContext'
 
-// ── 2025 CRA CONSTANTS ────────────────────────────────────────────────────────
+// ── 2026 CRA CONSTANTS ────────────────────────────────────────────────────────
 
-const CPP_2025 = {
+const CPP_2026 = {
   rate:              0.0595,
   basicExemption:    3500,
-  maxPensionable:    71300,
-  maxContribution:   4034.10,
+  maxPensionable:    74600,     // YMPE — Year's Maximum Pensionable Earnings
+  maxContribution:   4230.45,
+  // CPP2 — second additional tier, introduced 2024, on earnings between YMPE and YAMPE
+  cpp2Rate:          0.04,
+  cpp2Ceiling:       85000,     // YAMPE — Year's Additional Maximum Pensionable Earnings
+  maxCpp2Contribution: 416.00,
 }
 
-const EI_2025 = {
-  employeeRate:      0.0164,
-  maxInsurable:      65700,
-  maxPremium:        1077.48,
+const EI_2026 = {
+  employeeRate:      0.0163,
+  maxInsurable:      68900,
+  maxPremium:        1123.07,
 }
 
-const FEDERAL_BRACKETS_2025 = [
-  { min: 0,       max: 57375,   rate: 0.15   },
-  { min: 57375,   max: 114750,  rate: 0.205  },
-  { min: 114750,  max: 158519,  rate: 0.26   },
-  { min: 158519,  max: 220000,  rate: 0.29   },
-  { min: 220000,  max: Infinity,rate: 0.33   },
+const FEDERAL_BRACKETS_2026 = [
+  { min: 0,       max: 58523,   rate: 0.14   },
+  { min: 58523,   max: 117045,  rate: 0.205  },
+  { min: 117045,  max: 181440,  rate: 0.26   },
+  { min: 181440,  max: 258482,  rate: 0.29   },
+  { min: 258482,  max: Infinity,rate: 0.33   },
 ]
-const FEDERAL_BASIC_PERSONAL_2025 = 16129
+const FEDERAL_BASIC_PERSONAL_2026 = 16452
 
-const AB_BRACKETS_2025 = [
-  { min: 0,       max: 148269,  rate: 0.10   },
-  { min: 148269,  max: 177922,  rate: 0.12   },
-  { min: 177922,  max: 237230,  rate: 0.13   },
-  { min: 237230,  max: 355845,  rate: 0.14   },
-  { min: 355845,  max: Infinity,rate: 0.15   },
+// Alberta introduced a new 8% bracket in 2025 (on the first $60,000, indexed to
+// $61,200 for 2026) — this is a NEW bracket, not just an updated threshold.
+const AB_BRACKETS_2026 = [
+  { min: 0,       max: 61200,   rate: 0.08   },
+  { min: 61200,   max: 154259,  rate: 0.10   },
+  { min: 154259,  max: 185111,  rate: 0.12   },
+  { min: 185111,  max: 246813,  rate: 0.13   },
+  { min: 246813,  max: 370220,  rate: 0.14   },
+  { min: 370220,  max: Infinity,rate: 0.15   },
 ]
-const AB_BASIC_PERSONAL_2025 = 21003
+const AB_BASIC_PERSONAL_2026 = 22769
 
 // Pay periods per year by frequency
 const PAY_PERIODS = {
@@ -55,24 +68,45 @@ const PAY_PERIODS = {
 // ── CRA CALCULATION FUNCTIONS ─────────────────────────────────────────────────
 
 /**
- * Calculate CPP deduction for a single pay period
- * CRA method: annualize gross, subtract exemption, apply rate, divide back
+ * Calculate CPP deduction for a single pay period, including CPP2.
+ * CRA method: annualize gross, subtract exemption, apply rate, divide back.
+ *
+ * Self-employed individuals pay both the employee and "employer" portions
+ * themselves, so their rates and maximums are exactly double the regular
+ * employee rates: base CPP 11.90% (max $8,460.90), CPP2 8.00% (max $832.00).
+ *
+ * Returns { cpp, cpp2, total }.
  */
-function calcCPP(grossPay, frequency, ytdCPP = 0) {
+function calcCPP(grossPay, frequency, ytd = { cpp: 0, cpp2: 0 }, selfEmployed = false) {
   const periods = PAY_PERIODS[frequency] || 26
   const annualGross = grossPay * periods
 
-  // CPP is only on pensionable earnings between exemption and max
-  const annualPensionable = Math.min(
-    Math.max(annualGross - CPP_2025.basicExemption, 0),
-    CPP_2025.maxPensionable - CPP_2025.basicExemption
-  )
-  const annualCPP = annualPensionable * CPP_2025.rate
-  const perPeriodCPP = annualCPP / periods
+  const rate               = selfEmployed ? CPP_2026.rate * 2               : CPP_2026.rate
+  const cpp2Rate           = selfEmployed ? CPP_2026.cpp2Rate * 2           : CPP_2026.cpp2Rate
+  const maxContribution    = selfEmployed ? CPP_2026.maxContribution * 2   : CPP_2026.maxContribution
+  const maxCpp2Contribution = selfEmployed ? CPP_2026.maxCpp2Contribution * 2 : CPP_2026.maxCpp2Contribution
 
-  // Don't exceed annual maximum minus already contributed
-  const remaining = Math.max(CPP_2025.maxContribution - ytdCPP, 0)
-  return Math.min(Math.round(perPeriodCPP * 100) / 100, remaining)
+  // ── Base CPP (tier 1): pensionable earnings between exemption and YMPE ──
+  const annualPensionable = Math.min(
+    Math.max(annualGross - CPP_2026.basicExemption, 0),
+    CPP_2026.maxPensionable - CPP_2026.basicExemption
+  )
+  const annualCPP = annualPensionable * rate
+  const perPeriodCPP = annualCPP / periods
+  const remainingCPP = Math.max(maxContribution - (ytd.cpp || 0), 0)
+  const cpp = Math.min(Math.round(perPeriodCPP * 100) / 100, remainingCPP)
+
+  // ── CPP2 (tier 2): earnings between YMPE and YAMPE ──
+  const annualCpp2Earnings = Math.min(
+    Math.max(annualGross - CPP_2026.maxPensionable, 0),
+    CPP_2026.cpp2Ceiling - CPP_2026.maxPensionable
+  )
+  const annualCpp2 = annualCpp2Earnings * cpp2Rate
+  const perPeriodCpp2 = annualCpp2 / periods
+  const remainingCpp2 = Math.max(maxCpp2Contribution - (ytd.cpp2 || 0), 0)
+  const cpp2 = Math.min(Math.round(perPeriodCpp2 * 100) / 100, remainingCpp2)
+
+  return { cpp, cpp2, total: cpp + cpp2 }
 }
 
 /**
@@ -82,11 +116,11 @@ function calcEI(grossPay, frequency, ytdEI = 0) {
   const periods = PAY_PERIODS[frequency] || 26
   const annualGross = grossPay * periods
 
-  const annualInsurable = Math.min(annualGross, EI_2025.maxInsurable)
-  const annualEI = annualInsurable * EI_2025.employeeRate
+  const annualInsurable = Math.min(annualGross, EI_2026.maxInsurable)
+  const annualEI = annualInsurable * EI_2026.employeeRate
   const perPeriodEI = annualEI / periods
 
-  const remaining = Math.max(EI_2025.maxPremium - ytdEI, 0)
+  const remaining = Math.max(EI_2026.maxPremium - ytdEI, 0)
   return Math.min(Math.round(perPeriodEI * 100) / 100, remaining)
 }
 
@@ -107,13 +141,13 @@ function applyBrackets(annualIncome, brackets) {
  * Calculate federal income tax for a single pay period (CRA periodic method)
  * TD1 credits reduce the annual tax owing
  */
-function calcFederalTax(grossPay, frequency, td1Credits = FEDERAL_BASIC_PERSONAL_2025) {
+function calcFederalTax(grossPay, frequency, td1Credits = FEDERAL_BASIC_PERSONAL_2026) {
   const periods = PAY_PERIODS[frequency] || 26
   const annualGross = grossPay * periods
 
   // Apply personal amount credit
   const taxableIncome = Math.max(annualGross - td1Credits, 0)
-  const annualTax = applyBrackets(taxableIncome, FEDERAL_BRACKETS_2025)
+  const annualTax = applyBrackets(taxableIncome, FEDERAL_BRACKETS_2026)
   const perPeriodTax = annualTax / periods
 
   return Math.max(Math.round(perPeriodTax * 100) / 100, 0)
@@ -122,12 +156,12 @@ function calcFederalTax(grossPay, frequency, td1Credits = FEDERAL_BASIC_PERSONAL
 /**
  * Calculate Alberta provincial income tax for a single pay period
  */
-function calcProvincialTax(grossPay, frequency, td1Credits = AB_BASIC_PERSONAL_2025) {
+function calcProvincialTax(grossPay, frequency, td1Credits = AB_BASIC_PERSONAL_2026) {
   const periods = PAY_PERIODS[frequency] || 26
   const annualGross = grossPay * periods
 
   const taxableIncome = Math.max(annualGross - td1Credits, 0)
-  const annualTax = applyBrackets(taxableIncome, AB_BRACKETS_2025)
+  const annualTax = applyBrackets(taxableIncome, AB_BRACKETS_2026)
   const perPeriodTax = annualTax / periods
 
   return Math.max(Math.round(perPeriodTax * 100) / 100, 0)
@@ -138,18 +172,30 @@ function calcProvincialTax(grossPay, frequency, td1Credits = AB_BASIC_PERSONAL_2
  */
 function calcDeductions(employee, grossPay, ytd = {}) {
   const freq     = employee.pay_frequency || 'biweekly'
-  const td1Fed   = Number(employee.td1_credits) || FEDERAL_BASIC_PERSONAL_2025
+  const td1Fed   = Number(employee.td1_credits) || FEDERAL_BASIC_PERSONAL_2026
   // AB provincial uses AB basic personal — in future can store separately
-  const td1AB    = AB_BASIC_PERSONAL_2025
+  const td1AB    = AB_BASIC_PERSONAL_2026
 
-  const cpp            = calcCPP(grossPay, freq, ytd.cpp || 0)
-  const ei             = calcEI(grossPay, freq, ytd.ei || 0)
+  const selfEmployed = !!employee.self_employed
+  // Self-employed individuals are always EI exempt, regardless of the flag on file
+  const eiExempt      = selfEmployed || !!employee.ei_exempt
+
+  const cppResult      = calcCPP(grossPay, freq, { cpp: ytd.cpp || 0, cpp2: ytd.cpp2 || 0 }, selfEmployed)
+  const ei             = eiExempt ? 0 : calcEI(grossPay, freq, ytd.ei || 0)
   const federal_tax    = calcFederalTax(grossPay, freq, td1Fed)
   const provincial_tax = calcProvincialTax(grossPay, freq, td1AB)
-  const total          = cpp + ei + federal_tax + provincial_tax
+  const total          = cppResult.total + ei + federal_tax + provincial_tax
   const net            = Math.max(grossPay - total, 0)
 
-  return { cpp, ei, federal_tax, provincial_tax, total, net }
+  return {
+    cpp:  cppResult.cpp,
+    cpp2: cppResult.cpp2,
+    ei,
+    federal_tax,
+    provincial_tax,
+    total,
+    net,
+  }
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -298,7 +344,7 @@ const css = `
     border-bottom: 1px solid var(--border); text-align: left;
   }
   .pr-table td { padding: 12px 18px; border-bottom: 1px solid #f8fafc; color: var(--slate-mid); vertical-align: middle; }
-  .pr-table tr:last-child td { border-bottom: none; }
+  .pr-table tbody tr:last-child td { border-bottom: none; }
   .pr-table tbody tr:hover { background: #f8fafc; }
   .pr-table td:first-child { color: var(--slate); font-weight: 500; }
 
@@ -380,7 +426,7 @@ export default function Payroll() {
   }, [selectedEmp, form.hours_worked])
 
   const deductionPreview = useMemo(() => {
-    if (!selectedEmp || grossPreview <= 0) return { cpp: 0, ei: 0, federal_tax: 0, provincial_tax: 0, total: 0, net: 0 }
+    if (!selectedEmp || grossPreview <= 0) return { cpp: 0, cpp2: 0, ei: 0, federal_tax: 0, provincial_tax: 0, total: 0, net: 0 }
     return calcDeductions(selectedEmp, grossPreview)
   }, [selectedEmp, grossPreview])
 
@@ -398,21 +444,23 @@ export default function Payroll() {
       // Get YTD totals for this employee
       const { data: pastEntries } = await supabase
         .from('payroll_entries')
-        .select('gross, cpp, ei, federal_tax, provincial_tax')
+        .select('gross, cpp, cpp2, ei, federal_tax, provincial_tax')
         .eq('org_id', activeOrg.orgId)
         .eq('employee_id', selectedEmp.id)
 
       const ytd = (pastEntries || []).reduce((acc, p) => ({
-        cpp: acc.cpp + Number(p.cpp || 0),
-        ei:  acc.ei  + Number(p.ei  || 0),
-      }), { cpp: 0, ei: 0 })
+        cpp:  acc.cpp  + Number(p.cpp  || 0),
+        cpp2: acc.cpp2 + Number(p.cpp2 || 0),
+        ei:   acc.ei   + Number(p.ei   || 0),
+      }), { cpp: 0, cpp2: 0, ei: 0 })
 
       const gross = grossPreview
       const ded   = calcDeductions(selectedEmp, gross, ytd)
 
       const ytdGross = (pastEntries || []).reduce((s, p) => s + Number(p.gross || 0), 0) + gross
-      const ytdCPP   = ytd.cpp + ded.cpp
-      const ytdEI    = ytd.ei  + ded.ei
+      const ytdCPP   = ytd.cpp  + ded.cpp
+      const ytdCPP2  = ytd.cpp2 + ded.cpp2
+      const ytdEI    = ytd.ei   + ded.ei
       const ytdTax   = (pastEntries || []).reduce((s, p) => s + Number(p.federal_tax || 0) + Number(p.provincial_tax || 0), 0) + ded.federal_tax + ded.provincial_tax
 
       const { data: run, error: runErr } = await supabase
@@ -439,12 +487,14 @@ export default function Payroll() {
           hours_worked:    selectedEmp.pay_type === 'hourly' ? Number(form.hours_worked) : null,
           gross,
           cpp:             ded.cpp,
+          cpp2:            ded.cpp2,
           ei:              ded.ei,
           federal_tax:     ded.federal_tax,
           provincial_tax:  ded.provincial_tax,
           net:             ded.net,
           ytd_gross:       ytdGross,
           ytd_cpp:         ytdCPP,
+          ytd_cpp2:        ytdCPP2,
           ytd_ei:          ytdEI,
           ytd_tax:         ytdTax,
         }])
@@ -508,7 +558,7 @@ export default function Payroll() {
         <div className="pr-header">
           <div>
             <div className="pr-title">Payroll</div>
-            <div className="pr-subtitle">2025 CRA rates · Alberta · {employees.length} active employee{employees.length !== 1 ? 's' : ''}</div>
+            <div className="pr-subtitle">2026 CRA rates · Alberta · {employees.length} active employee{employees.length !== 1 ? 's' : ''}</div>
           </div>
         </div>
 
@@ -584,11 +634,17 @@ export default function Payroll() {
                 </div>
                 <div className="pr-deductions">
                   <div className="pr-ded-row">
-                    <span className="pr-ded-label">CPP (5.95%)</span>
+                    <span className="pr-ded-label">CPP ({selectedEmp.self_employed ? '11.90%' : '5.95%'})</span>
                     <span className="pr-ded-value">{fmtCAD(deductionPreview.cpp)}</span>
                   </div>
+                  {deductionPreview.cpp2 > 0 && (
+                    <div className="pr-ded-row">
+                      <span className="pr-ded-label">CPP2 ({selectedEmp.self_employed ? '8%' : '4%'})</span>
+                      <span className="pr-ded-value">{fmtCAD(deductionPreview.cpp2)}</span>
+                    </div>
+                  )}
                   <div className="pr-ded-row">
-                    <span className="pr-ded-label">EI (1.64%)</span>
+                    <span className="pr-ded-label">EI {(selectedEmp.self_employed || selectedEmp.ei_exempt) ? '(exempt)' : '(1.63%)'}</span>
                     <span className="pr-ded-value">{fmtCAD(deductionPreview.ei)}</span>
                   </div>
                   <div className="pr-ded-row">
@@ -610,7 +666,7 @@ export default function Payroll() {
 
             {/* CRA rates notice */}
             <div className="pr-cra-note">
-              ✓ Using 2025 CRA rates — CPP 5.95% (max $4,034.10) · EI 1.64% (max $1,077.48) · Federal brackets up to 33% · Alberta brackets up to 15% · TD1 basic personal amount applied
+              ✓ Using 2026 CRA rates — CPP 5.95% to $74,600 (max $4,230.45) + CPP2 4% to $85,000 (max $416) · EI 1.63% (max $1,123.07) · Federal brackets 14%–33% (BPA $16,452) · Alberta brackets 8%–15% (BPA $22,769)
             </div>
 
             {statusMsg && (
