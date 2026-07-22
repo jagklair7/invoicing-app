@@ -109,6 +109,35 @@ function StatsIcon() {
     </svg>
   )
 }
+
+function VendorIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 6l1-4h10l1 4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" opacity=".85"/>
+      <path d="M2 6h12v7a1 1 0 01-1 1H3a1 1 0 01-1-1V6z" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M6 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+function POIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+function QuoteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M5 5h6M5 8h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+      <circle cx="10.5" cy="10.5" r="2.5" stroke="currentColor" strokeWidth="1.2" opacity=".8"/>
+      <path d="M12.3 12.3l1.2 1.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".8"/>
+    </svg>
+  )
+}
+
 function EstIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -288,6 +317,9 @@ export default function Layout({ children }) {
           )}
           
           <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
+          <NavItem to="/quotes" label="Quotes" icon={<QuoteIcon />} />
+          <NavItem to="/vendors" label="Vendors" icon={<VendorIcon />} />
+          <NavItem to="/purchase-orders" label="Purchase Orders" icon={<POIcon />} />
           
         </nav>
        
