@@ -240,10 +240,11 @@ export default function Layout({ children }) {
 
       {/* ── Sidebar ── */}
       <aside style={{
-        width: 224, minHeight: '100vh', background: 'white',
+        width: 224, Height: '100vh', background: 'white',
         borderRight: '1px solid #e2e8f0', display: 'flex',
         flexDirection: 'column', position: 'fixed',
         top: 0, left: 0, bottom: 0, zIndex: 40,
+        overflowY: 'auto',
       }}>
 
         {/* Brand */}
