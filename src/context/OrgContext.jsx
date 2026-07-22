@@ -1,5 +1,5 @@
 // src/context/OrgContext.jsx
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../app/supabaseClient'
 
 const OrgContext = createContext()
@@ -11,11 +11,19 @@ export function OrgProvider({ children }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading]           = useState(true)
 
+  // Tracks whether the initial org load has completed. After that, background
+  // re-validations (e.g. Supabase re-checking the session when the tab regains
+  // focus) should NOT flip `loading` back to true — doing so causes Layout to
+  // unmount and remount all page content, wiping any unsaved form state.
+  const initializedRef = useRef(false)
+
   const loadOrgs = useCallback(async () => {
-    setLoading(true)
+    if (!initializedRef.current) setLoading(true)
+
     const { data: userData } = await supabase.auth.getUser()
     if (!userData?.user) {
       setOrgs([]); setActiveOrg(null); setSettings(null)
+      initializedRef.current = true
       setLoading(false); return
     }
 
@@ -44,6 +52,7 @@ export function OrgProvider({ children }) {
 
     if (!allOrgs.length) {
       setActiveOrg(null); setSettings(null)
+      initializedRef.current = true
       setLoading(false); return
     }
 
@@ -53,6 +62,7 @@ export function OrgProvider({ children }) {
     const selected   = saved || allOrgs[0]
     setActiveOrg(selected)
     await loadSettings(selected.orgId)
+    initializedRef.current = true
     setLoading(false)
   }, [])
 
