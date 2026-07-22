@@ -303,7 +303,7 @@ export default function Layout({ children }) {
         )}
 
         {/* Main nav — filtered by feature flags */}
-        <nav style={{ flex: 1, padding: '10px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+       <nav style={{ flex: '1 1 auto', minHeight: 0, padding: '10px 10px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           <NavItem to="/" label="Dashboard" icon={<DashIcon />} end />
           {flags.customers !== false && (
             <NavItem to="/customers" label="Customers" icon={<CustIcon />} />
