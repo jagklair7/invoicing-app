@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "../supabaseClient";
-import { OrgContext } from "../context/OrgContext";
+import { supabase } from "../app/supabaseClient";
+//import { OrgContext } from "../context/OrgContext";
+import { useOrg } from "../context/OrgContext";
 
 const OPTION_LABELS = ["A", "B", "C", "D", "E"];
 
@@ -44,7 +45,8 @@ function calcOptionTotals(option) {
 }
 
 export default function QuoteForm() {
-  const { activeOrg } = useContext(OrgContext);
+  //const { activeOrg } = useContext(OrgContext);
+  const { activeOrg } = useOrg();
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);

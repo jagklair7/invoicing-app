@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "../supabaseClient";
-import { OrgContext } from "../context/OrgContext";
+import { supabase } from "../app/supabaseClient";
+//import { OrgContext } from "../context/OrgContext";
+import { useOrg } from "../context/OrgContext";
 import { exportQuotePDF } from "../utils/exportQuotePDF";
 
 const STATUS_COLORS = {
@@ -13,7 +14,8 @@ const STATUS_COLORS = {
 };
 
 export default function QuoteView() {
-  const { activeOrg } = useContext(OrgContext);
+ // const { activeOrg } = useContext(OrgContext);
+  const { activeOrg } = useOrg();
   const { id } = useParams();
   const navigate = useNavigate();
 

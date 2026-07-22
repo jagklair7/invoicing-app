@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../supabaseClient";
-import { OrgContext } from "../context/OrgContext";
+import { supabase } from "../app/supabaseClient";
+//import { OrgContext } from "../context/OrgContext";
+import { useOrg } from "../context/OrgContext";
 
 const statusColor = {
   draft: { bg: "#f3f4f6", color: "#6b7280" },
@@ -12,7 +13,8 @@ const statusColor = {
 };
 
 export default function Quotes() {
-  const { activeOrg } = useContext(OrgContext);
+ // const { activeOrg } = useContext(OrgContext);
+  const { activeOrg } = useOrg();
   const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
