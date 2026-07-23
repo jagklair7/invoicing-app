@@ -6,6 +6,7 @@ import App from './App'
 import { OrgProvider } from './context/OrgContext'
 import { AuthProvider } from './auth/AuthProvider'
 import { PlanProvider } from './context/PlanContext'
+import PWAUpdatePrompt from './components/PWAUpdatePrompt'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -13,6 +14,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
      <AuthProvider>
        <OrgProvider>
         <PlanProvider>
+          <PWAUpdatePrompt />
           <App />
          </PlanProvider>
        </OrgProvider>

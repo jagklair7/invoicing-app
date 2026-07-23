@@ -8,7 +8,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
+      injectRegister: 'auto',
       manifest: {
         name: 'Invoice PWA',
         short_name: 'Invoices',
