@@ -307,7 +307,24 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
 
       if (error) throw error
 
-      setPayments(prev => [...prev, data])
+      const updatedPayments = [...payments, data]
+      setPayments(updatedPayments)
+
+      // ── Sync invoice status based on the new running total ───────────────
+      // Payments alone don't move the invoice's status column — without this,
+      // the invoice list keeps showing "Sent" even once fully paid, and the
+      // only way to fix it is manually editing the invoice's status dropdown.
+      const newTotalPaid = updatedPayments.reduce((s, p) => s + Number(p.amount), 0)
+      const newBalance   = Number(invoiceTotal) - newTotalPaid
+
+      const { error: statusErr } = await supabase
+        .from('invoices')
+        .update({ status: newBalance <= 0 ? 'paid' : 'sent' })
+        .eq('id', invoiceId)
+        .eq('org_id', orgId)
+
+      if (statusErr) throw statusErr
+
       onPaymentAdded?.(data)
       setShowForm(false)
       setFormAmount('')
