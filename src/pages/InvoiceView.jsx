@@ -1093,10 +1093,12 @@ export default function InvoiceView() {
         .order('created_at', { ascending: false })
         .limit(1)
 
-      const lastNum = lastInv?.[0]?.number
-        ? parseInt(lastInv[0].number.replace(/\D/g, '')) || 0
-        : 0
-      const newNumber = `${String(lastNum + 1).padStart(3, '0')}`
+      const prevNumber = lastInv?.[0]?.number || ''
+      const numMatch = prevNumber.match(/^(\D*)(\d+)$/)
+      const prefix    = numMatch ? numMatch[1] : ''
+      const padWidth  = numMatch ? numMatch[2].length : 3
+      const lastNum   = numMatch ? parseInt(numMatch[2], 10) : 0
+      const newNumber = `${prefix}${String(lastNum + 1).padStart(padWidth, '0')}`
 
       const { data: newInv, error: invErr } = await supabase
         .from('invoices')
