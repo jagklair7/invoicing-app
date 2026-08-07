@@ -9,7 +9,7 @@ export default function Customers() {
   const [customers, setCustomers] = useState([])
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState({
-    name: '', email: '', phone: '', address: '',
+    name: '', contact_person: '', email: '', phone: '', address: '',
     city: '', province: 'AB', postal_code: '', country: 'Canada'
   })
   const navigate = useNavigate()
@@ -60,14 +60,14 @@ export default function Customers() {
     }
 
     setEditingId(null)
-    setFormData({ name: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada' })
+    setFormData({ name: '', contact_person: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada' })
     fetchCustomers()
   }
 
   const startEdit = (c) => {
     setEditingId(c.id)
     setFormData({
-      name: c.name, email: c.email || '', phone: c.phone || '',
+      name: c.name, contact_person: c.contact_person || '', email: c.email || '', phone: c.phone || '',
       address: c.address || '', city: c.city || '',
       province: c.province || 'AB', postal_code: c.postal_code || '', country: c.country || 'Canada'
     })
@@ -76,7 +76,7 @@ export default function Customers() {
 
   const cancelEdit = () => {
     setEditingId(null)
-    setFormData({ name: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada' })
+    setFormData({ name: '', contact_person: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada' })
   }
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -95,6 +95,10 @@ export default function Customers() {
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Company Name *</label>
             <input name="name" required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.name} onChange={handleChange} placeholder="e.g. Digital Corp" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Contact Person</label>
+            <input name="contact_person" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.contact_person} onChange={handleChange} placeholder="e.g. Jane Smith" />
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Email Address</label>
@@ -144,6 +148,7 @@ export default function Customers() {
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Customer</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Contact Person</th>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Email</th>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Phone</th>
               <th className="px-6 py-4 text-xs font-bold uppercase text-right text-gray-500">Actions</th>
@@ -151,10 +156,11 @@ export default function Customers() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {customers.length === 0 ? (
-              <tr><td colSpan={4} className="px-6 py-10 text-center text-gray-400 text-sm">No customers yet for {activeOrg?.name}.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-400 text-sm">No customers yet for {activeOrg?.name}.</td></tr>
             ) : customers.map(c => (
               <tr key={c.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 font-semibold text-gray-900">{c.name}</td>
+                <td className="px-6 py-4 text-gray-500 text-sm">{c.contact_person || '—'}</td>
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.email || '—'}</td>
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.phone || '—'}</td>
                 <td className="px-6 py-4 text-right space-x-4">
