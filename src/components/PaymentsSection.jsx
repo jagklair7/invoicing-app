@@ -9,6 +9,7 @@
  *   invoiceTotal — total amount due (for balance calculation)
  *   orgId        — active org ID
  *   onPaymentAdded(payment) — called after a payment is saved
+ *   onPaymentDeleted(paymentId) — called after a payment is removed
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -117,11 +118,42 @@ const css = `
     color: #1e293b;
   }
 
+  .pay-item-amount-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
   .pay-item-amount {
     font-size: 14px;
     font-weight: 600;
     color: #0d7377;
     font-variant-numeric: tabular-nums;
+  }
+
+  .pay-item-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #cbd5e1;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: all .15s;
+  }
+  .pay-item-delete:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #dc2626;
+  }
+  .pay-item-delete:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .pay-item-meta {
@@ -262,11 +294,12 @@ const css = `
   }
 `
 
-export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaymentAdded }) {
+export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaymentAdded, onPaymentDeleted }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
 
   const [formAmount, setFormAmount]   = useState('')
   const [formMethod, setFormMethod]   = useState('card')
@@ -286,6 +319,22 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
   }, [invoiceId, orgId])
 
   useEffect(() => { fetchPayments() }, [fetchPayments])
+
+  // Recompute and persist invoice status from a given payments array.
+  // Shared by save + delete so status never drifts out of sync with
+  // what's actually recorded.
+  async function syncInvoiceStatus(currentPayments) {
+    const totalPaid = currentPayments.reduce((s, p) => s + Number(p.amount), 0)
+    const balance   = Number(invoiceTotal) - totalPaid
+
+    const { error: statusErr } = await supabase
+      .from('invoices')
+      .update({ status: balance <= 0 ? 'paid' : 'sent' })
+      .eq('id', invoiceId)
+      .eq('org_id', orgId)
+
+    if (statusErr) throw statusErr
+  }
 
   async function savePayment() {
     const amount = parseFloat(formAmount)
@@ -314,16 +363,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
       // Payments alone don't move the invoice's status column — without this,
       // the invoice list keeps showing "Sent" even once fully paid, and the
       // only way to fix it is manually editing the invoice's status dropdown.
-      const newTotalPaid = updatedPayments.reduce((s, p) => s + Number(p.amount), 0)
-      const newBalance   = Number(invoiceTotal) - newTotalPaid
-
-      const { error: statusErr } = await supabase
-        .from('invoices')
-        .update({ status: newBalance <= 0 ? 'paid' : 'sent' })
-        .eq('id', invoiceId)
-        .eq('org_id', orgId)
-
-      if (statusErr) throw statusErr
+      await syncInvoiceStatus(updatedPayments)
 
       onPaymentAdded?.(data)
       setShowForm(false)
@@ -335,6 +375,38 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
       alert('Failed to save payment: ' + err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deletePayment(payment) {
+    const confirmed = window.confirm(
+      `Remove this ${fmt(payment.amount)} payment from this invoice? This can't be undone.`
+    )
+    if (!confirmed) return
+
+    setDeletingId(payment.id)
+    try {
+      const { error } = await supabase
+        .from('invoice_payments')
+        .delete()
+        .eq('id', payment.id)
+        .eq('org_id', orgId)
+
+      if (error) throw error
+
+      const updatedPayments = payments.filter(p => p.id !== payment.id)
+      setPayments(updatedPayments)
+
+      // Re-sync status now that the total paid has changed — a deletion can
+      // just as easily flip an invoice from "paid" back to "sent" as an
+      // addition can flip it the other way.
+      await syncInvoiceStatus(updatedPayments)
+
+      onPaymentDeleted?.(payment.id)
+    } catch (err) {
+      alert('Failed to remove payment: ' + err.message)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -368,7 +440,18 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
                 <div className="pay-item-body">
                   <div className="pay-item-top">
                     <span className="pay-item-method">{METHOD_LABELS[p.method] || p.method}</span>
-                    <span className="pay-item-amount">{fmt(p.amount)}</span>
+                    <div className="pay-item-amount-group">
+                      <span className="pay-item-amount">{fmt(p.amount)}</span>
+                      <button
+                        className="pay-item-delete"
+                        onClick={() => deletePayment(p)}
+                        disabled={deletingId === p.id}
+                        title="Remove this payment"
+                        aria-label="Remove this payment"
+                      >
+                        {deletingId === p.id ? '…' : '✕'}
+                      </button>
+                    </div>
                   </div>
                   <div className="pay-item-meta">{fmtDateTime(p.payment_date)}</div>
                   {p.note && <div className="pay-item-notes">"{p.note}"</div>}
