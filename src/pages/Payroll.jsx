@@ -690,25 +690,25 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
   doc.setFontSize(18)
   doc.setTextColor(...slate)
   doc.text(`${year} Payroll Remittance Summary`, margin, y)
-  y += 20
+  y += 22
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   doc.setTextColor(...slateLt)
   doc.text(orgName || 'Company name not set', margin, y)
-  y += 24
+  y += 28
   doc.setDrawColor(...border)
   doc.line(margin, y, pageWidth - margin, y)
-  y += 26
+  y += 32
 
   let grandTotal = { gross: 0, cpp: 0, cpp2: 0, ei: 0, fed: 0, prov: 0, empCpp: 0, empCpp2: 0, empEi: 0, remit: 0 }
 
   for (const [empId, empEntries] of Object.entries(byEmployee)) {
-    ensureSpace(60)
+    ensureSpace(70)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(12)
     doc.setTextColor(...teal)
     doc.text(empNameById[empId] || 'Unknown employee', margin, y)
-    y += 18
+    y += 22
 
     doc.setFontSize(8.5)
     doc.setFont('helvetica', 'bold')
@@ -725,7 +725,8 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
     cols.forEach(c => doc.text(c.label, c.x, y, { align: c.align }))
     y += 12
     doc.setDrawColor(...border)
-    doc.line(margin, y - 4, pageWidth - margin, y - 4)
+    doc.line(margin, y, pageWidth - margin, y)
+    y += 20   // clear gap between the header rule and the first data row's text
 
     let empTotal = { gross: 0, remit: 0 }
     doc.setFont('helvetica', 'normal')
@@ -733,7 +734,7 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
     doc.setTextColor(...slateMid)
 
     for (const e of empEntries) {
-      ensureSpace(16)
+      ensureSpace(18)
       const run = runById[e.payroll_run_id]
       const cppTot = Number(e.cpp || 0) + Number(e.cpp2 || 0)
       const empMatch = Number(e.employer_cpp || 0) + Number(e.employer_cpp2 || 0) + Number(e.employer_ei || 0)
@@ -744,7 +745,7 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
       doc.text(fmtCAD(Number(e.federal_tax) + Number(e.provincial_tax)), margin + 345, y, { align: 'right' })
       doc.text(fmtCAD(empMatch), margin + 420, y, { align: 'right' })
       doc.text(fmtCAD(e.total_remittance), pageWidth - margin, y, { align: 'right' })
-      y += 15
+      y += 18
 
       empTotal.gross += Number(e.gross || 0)
       empTotal.remit += Number(e.total_remittance || 0)
@@ -760,16 +761,19 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
       grandTotal.remit += Number(e.total_remittance || 0)
     }
 
-    ensureSpace(20)
+    ensureSpace(26)
+    y += 4   // small gap between the last data row and the subtotal rule
+    doc.setDrawColor(...border)
+    doc.line(margin, y - 8, pageWidth - margin, y - 8)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...slate)
     doc.text('Subtotal', margin, y)
     doc.text(fmtCAD(empTotal.gross), margin + 130, y, { align: 'right' })
     doc.text(fmtCAD(empTotal.remit), pageWidth - margin, y, { align: 'right' })
-    y += 24
+    y += 34   // extra breathing room before the next employee section (or total box)
   }
 
-  ensureSpace(50)
+  ensureSpace(56)
   doc.setFillColor(30, 41, 59)
   doc.roundedRect(margin, y - 20, pageWidth - margin * 2, 46, 6, 6, 'F')
   doc.setTextColor(255, 255, 255)
@@ -781,7 +785,7 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
   doc.text(fmtCAD(grandTotal.remit), pageWidth - margin - 16, y + 4, { align: 'right' })
   y += 46
 
-  y += 20
+  y += 26
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(...slateLt)
@@ -965,21 +969,34 @@ export default function Payroll() {
       // doesn't have ON DELETE CASCADE, deleting the run directly would be
       // silently rejected by Postgres (FK violation), leaving the run in
       // place even though the UI looked like it succeeded.
-      const { error: entriesErr } = await supabase
+      const { data: deletedEntries, error: entriesErr } = await supabase
         .from('payroll_entries')
         .delete()
         .eq('payroll_run_id', run.id)
         .eq('org_id', activeOrg.orgId)
+        .select('id')
       if (entriesErr) throw entriesErr
 
-      const { error: runErr } = await supabase
+      const { data: deletedRuns, error: runErr } = await supabase
         .from('payroll_runs')
         .delete()
         .eq('id', run.id)
         .eq('org_id', activeOrg.orgId)
+        .select('id')
       if (runErr) throw runErr
 
-      setStatusMsg({ ok: true, text: 'Run deleted.' })
+      // Supabase Row Level Security doesn't throw an error when a policy
+      // blocks a row — the delete call "succeeds" with 0 rows affected and
+      // error stays null. Requesting the deleted rows back via .select()
+      // lets us tell the difference between "actually deleted" and
+      // "silently blocked by RLS" instead of assuming success either way.
+      if (!deletedRuns || deletedRuns.length === 0) {
+        throw new Error(
+          'Nothing was deleted (0 rows affected). This is almost always a Supabase Row Level Security policy denying DELETE on payroll_runs (or payroll_entries) for your current role — check Table Editor → payroll_runs → Policies in Supabase.'
+        )
+      }
+
+      setStatusMsg({ ok: true, text: `Run deleted (${deletedEntries?.length || 0} entr${deletedEntries?.length === 1 ? 'y' : 'ies'} removed).` })
       fetchAll()
     } catch (err) {
       setStatusMsg({ ok: false, text: `Could not delete run: ${err.message}` })
