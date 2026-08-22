@@ -143,7 +143,12 @@ function calcCPP(grossPay, frequency, ytd = { cpp: 0, cpp2: 0 }, selfEmployed = 
   const remainingCpp2 = Math.max(maxCpp2Contribution - (ytd.cpp2 || 0), 0)
   const cpp2 = Math.min(Math.round(perPeriodCpp2 * 100) / 100, remainingCpp2)
 
-  return { cpp, cpp2, total: cpp + cpp2 }
+  // annualPensionable is exposed so tax functions can derive the F5A deduction
+  // and K2/K2P credit basis directly from earnings (per CRA's actual formula),
+  // rather than reverse-engineering them from the rounded-to-cents withholding
+  // amount above — using the rounded figure for those introduces a
+  // sub-cent drift that occasionally flips the final tax by a penny.
+  return { cpp, cpp2, total: cpp + cpp2, annualPensionable }
 }
 
 /**
@@ -181,12 +186,28 @@ function applyBrackets(annualIncome, brackets) {
  * This is the portion of CPP contributions that reduces TAXABLE INCOME
  * (rather than generating a tax credit): the 1.00% "first additional" slice
  * of base CPP, plus 100% of CPP2. Ref: T4127 Chapter 4, Step 1, factor F5.
+ *
+ * Derived directly from annualPensionable (the same earnings basis CRA's
+ * formula uses), NOT from the cpp figure already rounded to cents for the
+ * employee's pay stub — using the rounded figure here introduces enough
+ * sub-cent drift to occasionally flip the final tax by a penny.
  */
-function calcF5A(cpp, cpp2) {
-  // cpp here is the FULL base-CPP contribution for the period (4.95% + 1.00%).
-  // Only the 1.00% slice is deductible; back it out via the rate ratio.
-  const enhancedSlice = cpp * (CPP_2026.enhancedRate / CPP_2026.rate)
-  return enhancedSlice + cpp2
+function calcF5A(annualPensionable, cpp2, periods, selfEmployed) {
+  const enhancedRate = selfEmployed ? CPP_2026.enhancedRate * 2 : CPP_2026.enhancedRate
+  const perPeriodEnhanced = (annualPensionable * enhancedRate) / periods
+  return perPeriodEnhanced + cpp2
+}
+
+/**
+ * K2/K2P credit basis — the "base" (non-enhanced) CPP contribution used for
+ * the CPP tax credit, computed directly from annualPensionable per CRA's
+ * formula (0.0495 × pensionable earnings, capped), not by ratio-scaling the
+ * rounded per-period withholding amount.
+ */
+function calcCPPCreditBasis(annualPensionable, selfEmployed) {
+  const baseRate = selfEmployed ? CPP_2026.baseRate * 2 : CPP_2026.baseRate
+  const maxBase  = selfEmployed ? CPP_2026.maxBaseContribution * 2 : CPP_2026.maxBaseContribution
+  return Math.min(baseRate * annualPensionable, maxBase)
 }
 
 /**
@@ -195,22 +216,19 @@ function calcF5A(cpp, cpp2) {
  * deduction) minus K1 (BPA credit) minus K2 (CPP/EI credit) minus K4
  * (Canada Employment Amount credit).
  */
-function calcFederalTax(grossPay, frequency, td1Credits, cppForPeriod, ei) {
+function calcFederalTax(grossPay, frequency, td1Credits, annualPensionable, cpp2, ei, selfEmployed) {
   const periods = PAY_PERIODS[frequency] || 26
   const annualGrossBox14 = grossPay * periods            // gross employment income before any deductions — used for K4
-  const f5a = calcF5A(cppForPeriod, 0)                     // enhanced-CPP deduction for THIS period
+  const f5a = calcF5A(annualPensionable, cpp2, periods, selfEmployed)  // enhanced-CPP deduction for THIS period
   const A = periods * (grossPay - f5a)                     // annual taxable income after F5A
 
   const T3 = applyBrackets(A, FEDERAL_BRACKETS_2026)
 
   const K1 = FEDERAL_LOWEST_RATE_2026 * (td1Credits ?? FEDERAL_BASIC_PERSONAL_2026)
 
-  const annualBaseCPPCredit = Math.min(
-    periods * cppForPeriod * (CPP_2026.baseRate / CPP_2026.rate),
-    CPP_2026.maxBaseContribution
-  )
+  const baseCPPCreditBasis = calcCPPCreditBasis(annualPensionable, selfEmployed)
   const annualEICredit = Math.min(periods * ei, EI_2026.maxPremium)
-  const K2 = FEDERAL_LOWEST_RATE_2026 * (annualBaseCPPCredit + annualEICredit)
+  const K2 = FEDERAL_LOWEST_RATE_2026 * (baseCPPCreditBasis + annualEICredit)
 
   const K4 = Math.min(FEDERAL_LOWEST_RATE_2026 * annualGrossBox14, FEDERAL_LOWEST_RATE_2026 * CEA_2026)
 
@@ -225,21 +243,18 @@ function calcFederalTax(grossPay, frequency, td1Credits, cppForPeriod, ei) {
  * the federal method (K1P BPA credit + K2P CPP/EI credit). AB has no
  * provincial equivalent of the federal K4 employment-amount credit.
  */
-function calcProvincialTax(grossPay, frequency, td1Credits, cppForPeriod, ei) {
+function calcProvincialTax(grossPay, frequency, td1Credits, annualPensionable, cpp2, ei, selfEmployed) {
   const periods = PAY_PERIODS[frequency] || 26
-  const f5a = calcF5A(cppForPeriod, 0)
+  const f5a = calcF5A(annualPensionable, cpp2, periods, selfEmployed)
   const A = periods * (grossPay - f5a)
 
   const T4raw = applyBrackets(A, AB_BRACKETS_2026)
 
   const K1P = AB_LOWEST_RATE_2026 * (td1Credits ?? AB_BASIC_PERSONAL_2026)
 
-  const annualBaseCPPCredit = Math.min(
-    periods * cppForPeriod * (CPP_2026.baseRate / CPP_2026.rate),
-    CPP_2026.maxBaseContribution
-  )
+  const baseCPPCreditBasis = calcCPPCreditBasis(annualPensionable, selfEmployed)
   const annualEICredit = Math.min(periods * ei, EI_2026.maxPremium)
-  const K2P = AB_LOWEST_RATE_2026 * (annualBaseCPPCredit + annualEICredit)
+  const K2P = AB_LOWEST_RATE_2026 * (baseCPPCreditBasis + annualEICredit)
 
   const K5P = Math.max((K1P + K2P - AB_K5P_THRESHOLD) * 0.25, 0)
 
@@ -273,8 +288,8 @@ function calcDeductions(employee, grossPay, ytd = {}, eiExemptOverride = undefin
 
   const cppResult      = calcCPP(grossPay, freq, { cpp: ytd.cpp || 0, cpp2: ytd.cpp2 || 0 }, selfEmployed)
   const ei             = eiExempt ? 0 : calcEI(grossPay, freq, ytd.ei || 0)
-  const federal_tax    = calcFederalTax(grossPay, freq, td1Fed, cppResult.cpp, ei)
-  const provincial_tax = calcProvincialTax(grossPay, freq, td1AB, cppResult.cpp, ei)
+  const federal_tax    = calcFederalTax(grossPay, freq, td1Fed, cppResult.annualPensionable, cppResult.cpp2, ei, selfEmployed)
+  const provincial_tax = calcProvincialTax(grossPay, freq, td1AB, cppResult.annualPensionable, cppResult.cpp2, ei, selfEmployed)
   const total          = cppResult.total + ei + federal_tax + provincial_tax
   const net            = Math.max(grossPay - total, 0)
 
