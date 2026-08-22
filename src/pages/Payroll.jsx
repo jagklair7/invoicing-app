@@ -585,7 +585,9 @@ function generateRemittancePDF(run, entry, employee, orgName) {
   row('EI', fmtCAD(entry.ei))
   row('Federal tax', fmtCAD(entry.federal_tax))
   row('Provincial tax (AB)', fmtCAD(entry.provincial_tax))
+  y += 6
   divider()
+  y += 12
   row('Net pay to employee', fmtCAD(entry.net), { bold: true })
   y += 16
 
