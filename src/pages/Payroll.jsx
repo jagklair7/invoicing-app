@@ -959,9 +959,31 @@ export default function Payroll() {
 
   async function deleteRun(run) {
     if (!window.confirm(`Delete payroll run for ${fmtDate(run.pay_date)}? This also removes its entries.`)) return
-    await supabase.from('payroll_runs').delete().eq('id', run.id).eq('org_id', activeOrg.orgId)
-    setStatusMsg({ ok: true, text: 'Run deleted.' })
-    fetchAll()
+    setStatusMsg(null)
+    try {
+      // Delete dependent entries first — if payroll_entries.payroll_run_id
+      // doesn't have ON DELETE CASCADE, deleting the run directly would be
+      // silently rejected by Postgres (FK violation), leaving the run in
+      // place even though the UI looked like it succeeded.
+      const { error: entriesErr } = await supabase
+        .from('payroll_entries')
+        .delete()
+        .eq('payroll_run_id', run.id)
+        .eq('org_id', activeOrg.orgId)
+      if (entriesErr) throw entriesErr
+
+      const { error: runErr } = await supabase
+        .from('payroll_runs')
+        .delete()
+        .eq('id', run.id)
+        .eq('org_id', activeOrg.orgId)
+      if (runErr) throw runErr
+
+      setStatusMsg({ ok: true, text: 'Run deleted.' })
+      fetchAll()
+    } catch (err) {
+      setStatusMsg({ ok: false, text: `Could not delete run: ${err.message}` })
+    }
   }
 
   // ── Remittance slip ──
@@ -1220,6 +1242,11 @@ export default function Payroll() {
               </button>
             </div>
           </div>
+          {statusMsg && (
+            <div className={statusMsg.ok ? 'pr-status-ok' : 'pr-status-err'} style={{ margin: '0 22px 16px' }}>
+              {statusMsg.ok ? '✓' : '⚠'} {statusMsg.text}
+            </div>
+          )}
           {loading ? (
             <div className="pr-spinner" />
           ) : runs.length === 0 ? (
