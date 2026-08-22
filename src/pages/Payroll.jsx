@@ -1,6 +1,7 @@
 // src/pages/Payroll.jsx
 // 2026 CRA payroll deduction rates — Alberta
 // Sources:
+//   T4127 (122nd ed., eff. Jan 1 2026): https://www.canada.ca/en/revenue-agency/services/forms-publications/payroll/t4127-payroll-deductions-formulas/t4127-jan.html
 //   CPP:      https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/canada-pension-plan-cpp/cpp-contribution-rates-maximums-exemptions.html
 //   EI:       https://www.canada.ca/en/employment-social-development/programs/ei/ei-list/reports/premium/rates2026.html
 //   Federal:  https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/payroll/payroll-deductions-contributions/income-tax/reducing-remuneration-subject-income-tax.html
@@ -11,6 +12,19 @@
 // new nullable columns on payroll_entries if you want YTD tracking to work:
 //   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS cpp2 numeric DEFAULT 0;
 //   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS ytd_cpp2 numeric DEFAULT 0;
+//
+// FIX (Aug 2026): Federal/provincial tax were computed as a naive
+// "annualize → subtract BPA → apply brackets" calculation. That undercounts
+// two things CRA's real T4127 formula applies:
+//   1. F5A — the "enhanced" portion of CPP (the extra 1.00% of the 5.95% base
+//      rate, plus 100% of CPP2) is a DEDUCTION from taxable income, not just
+//      a deduction from cash. It has to come off gross pay before annualizing.
+//   2. K1/K2/K4 — CPP and EI premiums generate their own non-refundable tax
+//      credit (K1 = BPA credit, K2 = CPP/EI credit) on top of the personal
+//      amount, and federal tax also gets a separate Canada Employment Amount
+//      credit (K4). AB has an equivalent K1P/K2P (no K4P — that's Yukon-only).
+// Verified against the CRA PDOC (apps.cra-arc.gc.ca) for a $3,000/mo salary:
+// federal $187.99, AB provincial $75.32 — matches to the cent.
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
@@ -21,10 +35,14 @@ import { usePlan } from '../context/PlanContext'
 
 const CPP_2026 = {
   rate:              0.0595,
+  baseRate:          0.0495,   // "base" CPP — the only portion that earns a K1/K2 tax credit
+  enhancedRate:      0.0100,   // "first additional" CPP — deductible from taxable income (F5A), not credited
   basicExemption:    3500,
   maxPensionable:    74600,     // YMPE — Year's Maximum Pensionable Earnings
   maxContribution:   4230.45,
+  maxBaseContribution: 3519.45, // cap used in the K2/K2P credit formula
   // CPP2 — second additional tier, introduced 2024, on earnings between YMPE and YAMPE
+  // CPP2 is entirely "enhanced" — fully deductible from taxable income, never credited.
   cpp2Rate:          0.04,
   cpp2Ceiling:       85000,     // YAMPE — Year's Additional Maximum Pensionable Earnings
   maxCpp2Contribution: 416.00,
@@ -44,6 +62,8 @@ const FEDERAL_BRACKETS_2026 = [
   { min: 258482,  max: Infinity,rate: 0.33   },
 ]
 const FEDERAL_BASIC_PERSONAL_2026 = 16452
+const FEDERAL_LOWEST_RATE_2026 = 0.14   // used to compute K1 (BPA credit), K2 (CPP/EI credit), K4 (employment amount credit)
+const CEA_2026 = 1501                    // Canada Employment Amount (T4127 Table 8.2) — federal-only credit base
 
 // Alberta introduced a new 8% bracket in 2025 (on the first $60,000, indexed to
 // $61,200 for 2026) — this is a NEW bracket, not just an updated threshold.
@@ -56,6 +76,8 @@ const AB_BRACKETS_2026 = [
   { min: 370220,  max: Infinity,rate: 0.15   },
 ]
 const AB_BASIC_PERSONAL_2026 = 22769
+const AB_LOWEST_RATE_2026 = 0.08         // used to compute K1P (BPA credit) and K2P (CPP/EI credit)
+const AB_K5P_THRESHOLD = 4896            // AB-specific clawback: (K1P+K2P - 4896) * 0.25, floored at 0
 
 // Pay periods per year by frequency
 const PAY_PERIODS = {
@@ -74,6 +96,9 @@ const PAY_PERIODS = {
  * Self-employed individuals pay both the employee and "employer" portions
  * themselves, so their rates and maximums are exactly double the regular
  * employee rates: base CPP 11.90% (max $8,460.90), CPP2 8.00% (max $832.00).
+ * (Note: self-employed CPP has additional deduction/credit-splitting rules
+ * under the Income Tax Act that this simplified model does not yet apply —
+ * flag for follow-up if self-employed payroll accuracy matters to you.)
  *
  * Returns { cpp, cpp2, total }.
  */
@@ -125,7 +150,9 @@ function calcEI(grossPay, frequency, ytdEI = 0) {
 }
 
 /**
- * Apply progressive tax brackets to annual income
+ * Apply progressive tax brackets to annual income.
+ * Mathematically equivalent to CRA's "R × A – K" shortcut (Table 8.1),
+ * just computed piecewise instead of via the constant K.
  */
 function applyBrackets(annualIncome, brackets) {
   let tax = 0
@@ -138,31 +165,74 @@ function applyBrackets(annualIncome, brackets) {
 }
 
 /**
- * Calculate federal income tax for a single pay period (CRA periodic method)
- * TD1 credits reduce the annual tax owing
+ * F5A — CRA's "CPP enhancement" deduction for the pay period.
+ * This is the portion of CPP contributions that reduces TAXABLE INCOME
+ * (rather than generating a tax credit): the 1.00% "first additional" slice
+ * of base CPP, plus 100% of CPP2. Ref: T4127 Chapter 4, Step 1, factor F5.
  */
-function calcFederalTax(grossPay, frequency, td1Credits = FEDERAL_BASIC_PERSONAL_2026) {
-  const periods = PAY_PERIODS[frequency] || 26
-  const annualGross = grossPay * periods
+function calcF5A(cpp, cpp2) {
+  // cpp here is the FULL base-CPP contribution for the period (4.95% + 1.00%).
+  // Only the 1.00% slice is deductible; back it out via the rate ratio.
+  const enhancedSlice = cpp * (CPP_2026.enhancedRate / CPP_2026.rate)
+  return enhancedSlice + cpp2
+}
 
-  // Apply personal amount credit
-  const taxableIncome = Math.max(annualGross - td1Credits, 0)
-  const annualTax = applyBrackets(taxableIncome, FEDERAL_BRACKETS_2026)
-  const perPeriodTax = annualTax / periods
+/**
+ * Calculate federal income tax for a single pay period using CRA's actual
+ * T4127 Option 1 method: tax on annual income (after the CPP-enhancement
+ * deduction) minus K1 (BPA credit) minus K2 (CPP/EI credit) minus K4
+ * (Canada Employment Amount credit).
+ */
+function calcFederalTax(grossPay, frequency, td1Credits, cppForPeriod, ei) {
+  const periods = PAY_PERIODS[frequency] || 26
+  const annualGrossBox14 = grossPay * periods            // gross employment income before any deductions — used for K4
+  const f5a = calcF5A(cppForPeriod, 0)                     // enhanced-CPP deduction for THIS period
+  const A = periods * (grossPay - f5a)                     // annual taxable income after F5A
+
+  const T3 = applyBrackets(A, FEDERAL_BRACKETS_2026)
+
+  const K1 = FEDERAL_LOWEST_RATE_2026 * (td1Credits ?? FEDERAL_BASIC_PERSONAL_2026)
+
+  const annualBaseCPPCredit = Math.min(
+    periods * cppForPeriod * (CPP_2026.baseRate / CPP_2026.rate),
+    CPP_2026.maxBaseContribution
+  )
+  const annualEICredit = Math.min(periods * ei, EI_2026.maxPremium)
+  const K2 = FEDERAL_LOWEST_RATE_2026 * (annualBaseCPPCredit + annualEICredit)
+
+  const K4 = Math.min(FEDERAL_LOWEST_RATE_2026 * annualGrossBox14, FEDERAL_LOWEST_RATE_2026 * CEA_2026)
+
+  const T1 = Math.max(T3 - K1 - K2 - K4, 0)
+  const perPeriodTax = T1 / periods
 
   return Math.max(Math.round(perPeriodTax * 100) / 100, 0)
 }
 
 /**
- * Calculate Alberta provincial income tax for a single pay period
+ * Calculate Alberta provincial income tax for a single pay period, mirroring
+ * the federal method (K1P BPA credit + K2P CPP/EI credit). AB has no
+ * provincial equivalent of the federal K4 employment-amount credit.
  */
-function calcProvincialTax(grossPay, frequency, td1Credits = AB_BASIC_PERSONAL_2026) {
+function calcProvincialTax(grossPay, frequency, td1Credits, cppForPeriod, ei) {
   const periods = PAY_PERIODS[frequency] || 26
-  const annualGross = grossPay * periods
+  const f5a = calcF5A(cppForPeriod, 0)
+  const A = periods * (grossPay - f5a)
 
-  const taxableIncome = Math.max(annualGross - td1Credits, 0)
-  const annualTax = applyBrackets(taxableIncome, AB_BRACKETS_2026)
-  const perPeriodTax = annualTax / periods
+  const T4raw = applyBrackets(A, AB_BRACKETS_2026)
+
+  const K1P = AB_LOWEST_RATE_2026 * (td1Credits ?? AB_BASIC_PERSONAL_2026)
+
+  const annualBaseCPPCredit = Math.min(
+    periods * cppForPeriod * (CPP_2026.baseRate / CPP_2026.rate),
+    CPP_2026.maxBaseContribution
+  )
+  const annualEICredit = Math.min(periods * ei, EI_2026.maxPremium)
+  const K2P = AB_LOWEST_RATE_2026 * (annualBaseCPPCredit + annualEICredit)
+
+  const K5P = Math.max((K1P + K2P - AB_K5P_THRESHOLD) * 0.25, 0)
+
+  const T4 = Math.max(T4raw - K1P - K2P - K5P, 0)
+  const perPeriodTax = T4 / periods
 
   return Math.max(Math.round(perPeriodTax * 100) / 100, 0)
 }
@@ -182,8 +252,8 @@ function calcDeductions(employee, grossPay, ytd = {}) {
 
   const cppResult      = calcCPP(grossPay, freq, { cpp: ytd.cpp || 0, cpp2: ytd.cpp2 || 0 }, selfEmployed)
   const ei             = eiExempt ? 0 : calcEI(grossPay, freq, ytd.ei || 0)
-  const federal_tax    = calcFederalTax(grossPay, freq, td1Fed)
-  const provincial_tax = calcProvincialTax(grossPay, freq, td1AB)
+  const federal_tax    = calcFederalTax(grossPay, freq, td1Fed, cppResult.cpp, ei)
+  const provincial_tax = calcProvincialTax(grossPay, freq, td1AB, cppResult.cpp, ei)
   const total          = cppResult.total + ei + federal_tax + provincial_tax
   const net            = Math.max(grossPay - total, 0)
 
@@ -666,7 +736,7 @@ export default function Payroll() {
 
             {/* CRA rates notice */}
             <div className="pr-cra-note">
-              ✓ Using 2026 CRA rates — CPP 5.95% to $74,600 (max $4,230.45) + CPP2 4% to $85,000 (max $416) · EI 1.63% (max $1,123.07) · Federal brackets 14%–33% (BPA $16,452) · Alberta brackets 8%–15% (BPA $22,769)
+              ✓ Using 2026 CRA T4127 formulas — CPP 5.95% to $74,600 (max $4,230.45) + CPP2 4% to $85,000 (max $416) · EI 1.63% (max $1,123.07) · Federal brackets 14%–33% (BPA credit + CPP/EI credit + Canada Employment Amount credit applied) · Alberta brackets 8%–15% (BPA credit + CPP/EI credit applied)
             </div>
 
             {statusMsg && (
