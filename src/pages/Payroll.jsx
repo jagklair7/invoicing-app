@@ -13,6 +13,16 @@
 //   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS cpp2 numeric DEFAULT 0;
 //   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS ytd_cpp2 numeric DEFAULT 0;
 //
+// NOTE (Aug 2026): Remittance slip feature requires these additional columns.
+// Employer-match amounts and total remittance are calculated and stored at
+// creation time (not recalculated later) so slips stay accurate for a given
+// pay run even after CRA rates change in a future year:
+//   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS employer_cpp numeric DEFAULT 0;
+//   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS employer_cpp2 numeric DEFAULT 0;
+//   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS employer_ei numeric DEFAULT 0;
+//   ALTER TABLE payroll_entries ADD COLUMN IF NOT EXISTS total_remittance numeric DEFAULT 0;
+//   ALTER TABLE payroll_runs    ADD COLUMN IF NOT EXISTS total_remittance numeric DEFAULT 0;
+//
 // FIX (Aug 2026): Federal/provincial tax were computed as a naive
 // "annualize → subtract BPA → apply brackets" calculation. That undercounts
 // two things CRA's real T4127 formula applies:
@@ -27,6 +37,7 @@
 // federal $187.99, AB provincial $75.32 — matches to the cent.
 
 import { useEffect, useMemo, useState } from 'react'
+import jsPDF from 'jspdf'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { usePlan } from '../context/PlanContext'
@@ -52,6 +63,7 @@ const EI_2026 = {
   employeeRate:      0.0163,
   maxInsurable:      68900,
   maxPremium:        1123.07,
+  employerMultiplier: 1.4,   // employer EI premium = 1.4x the employee's premium (standard rate outside Quebec)
 }
 
 const FEDERAL_BRACKETS_2026 = [
@@ -238,17 +250,26 @@ function calcProvincialTax(grossPay, frequency, td1Credits, cppForPeriod, ei) {
 }
 
 /**
- * Full deduction calculation for one pay run
+ * Full deduction calculation for one pay run.
+ *
+ * eiExemptOverride lets a single payroll run flip EI-exempt status without
+ * touching the employee's saved default — useful for a mid-year change
+ * (e.g. an employee hits their annual EI max with another employer) without
+ * having to go edit the employee record first. Pass true/false to override,
+ * or leave undefined to fall back to employee.ei_exempt.
  */
-function calcDeductions(employee, grossPay, ytd = {}) {
+function calcDeductions(employee, grossPay, ytd = {}, eiExemptOverride = undefined) {
   const freq     = employee.pay_frequency || 'biweekly'
   const td1Fed   = Number(employee.td1_credits) || FEDERAL_BASIC_PERSONAL_2026
   // AB provincial uses AB basic personal — in future can store separately
   const td1AB    = AB_BASIC_PERSONAL_2026
 
   const selfEmployed = !!employee.self_employed
-  // Self-employed individuals are always EI exempt, regardless of the flag on file
-  const eiExempt      = selfEmployed || !!employee.ei_exempt
+  // Self-employed individuals are always EI exempt, regardless of any flag.
+  // Otherwise, an explicit per-run override wins over the employee's saved default.
+  const eiExempt      = selfEmployed
+    ? true
+    : (eiExemptOverride !== undefined ? eiExemptOverride : !!employee.ei_exempt)
 
   const cppResult      = calcCPP(grossPay, freq, { cpp: ytd.cpp || 0, cpp2: ytd.cpp2 || 0 }, selfEmployed)
   const ei             = eiExempt ? 0 : calcEI(grossPay, freq, ytd.ei || 0)
@@ -266,6 +287,42 @@ function calcDeductions(employee, grossPay, ytd = {}) {
     total,
     net,
   }
+}
+
+/**
+ * Employer-side amounts owed on top of what was withheld from the employee,
+ * for CRA remittance purposes (this is what makes a "remittance slip" differ
+ * from a pay stub — CRA wants employee-withheld + employer-matched amounts
+ * together in one payment).
+ *
+ * - CPP and CPP2: employer matches the employee's contribution dollar-for-dollar.
+ * - EI: employer pays 1.4x the employee's premium (standard multiplier outside Quebec).
+ * - Income tax (federal + provincial): withheld only, no employer match — the
+ *   employer just remits what was deducted from the employee.
+ *
+ * For a genuinely self-employed individual (no T4 employment relationship),
+ * there's no employer match — they've already paid both CPP halves themselves
+ * via the doubled self-employed rate, and self-employed CPP isn't remitted
+ * through payroll at all (it's settled on the T1 return via Schedule 8).
+ */
+function calcEmployerAmounts(ded, employee) {
+  const selfEmployed = !!employee.self_employed
+  if (selfEmployed) {
+    return {
+      employer_cpp: 0,
+      employer_cpp2: 0,
+      employer_ei: 0,
+      total_remittance: ded.total, // no separate remittance mechanism modeled here
+    }
+  }
+  const employer_cpp  = ded.cpp
+  const employer_cpp2 = ded.cpp2
+  const employer_ei   = Math.round(ded.ei * EI_2026.employerMultiplier * 100) / 100
+
+  const total_remittance = ded.cpp + ded.cpp2 + ded.ei + ded.federal_tax + ded.provincial_tax
+    + employer_cpp + employer_cpp2 + employer_ei
+
+  return { employer_cpp, employer_cpp2, employer_ei, total_remittance }
 }
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -448,7 +505,279 @@ const css = `
 const fmtCAD = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
 const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
 
-const DEFAULT_FORM = { employee_id: '', period_start: '', period_end: '', pay_date: '', hours_worked: '' }
+/**
+ * Builds a one-page printable remittance slip for a single payroll run —
+ * shows what was withheld from the employee, what the employer owes on top
+ * (CPP/CPP2 match + EI 1.4x), and the total that needs to be remitted to CRA.
+ * orgName is passed in from activeOrg (adjust the field name in the caller
+ * if your OrgContext doesn't expose `.name`).
+ */
+function generateRemittancePDF(run, entry, employee, orgName) {
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 50
+  let y = 56
+
+  const teal = [13, 115, 119]
+  const slate = [30, 41, 59]
+  const slateMid = [71, 85, 105]
+  const slateLt = [148, 163, 184]
+  const border = [226, 232, 240]
+
+  // ── Header ──
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(18)
+  doc.setTextColor(...slate)
+  doc.text('Payroll Remittance Slip', margin, y)
+  y += 20
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(...slateLt)
+  doc.text(orgName || 'Company name not set', margin, y)
+  y += 28
+
+  doc.setDrawColor(...border)
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 22
+
+  // ── Employee / period info ──
+  doc.setFontSize(10)
+  const infoRow = (label, value, x) => {
+    doc.setTextColor(...slateLt)
+    doc.text(label, x, y)
+    doc.setTextColor(...slate)
+    doc.setFont('helvetica', 'bold')
+    doc.text(value, x, y + 14)
+    doc.setFont('helvetica', 'normal')
+  }
+  infoRow('EMPLOYEE', employee?.name || '—', margin)
+  infoRow('PAY PERIOD', `${fmtDate(run.period_start)} – ${fmtDate(run.period_end)}`, margin + 200)
+  infoRow('PAY DATE', fmtDate(run.pay_date), margin + 400)
+  y += 40
+
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 26
+
+  // ── Section helper: two-column amount table ──
+  const sectionTitle = (title) => {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(...teal)
+    doc.text(title, margin, y)
+    y += 18
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+  }
+  const row = (label, value, opts = {}) => {
+    doc.setTextColor(...(opts.bold ? slate : slateMid))
+    doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
+    doc.text(label, margin + 10, y)
+    doc.text(value, pageWidth - margin, y, { align: 'right' })
+    y += 16
+  }
+  const divider = () => { doc.setDrawColor(...border); doc.line(margin, y - 6, pageWidth - margin, y - 6) }
+
+  // Employee-withheld amounts
+  sectionTitle('Withheld from employee')
+  row('Gross pay', fmtCAD(entry.gross))
+  row('CPP', fmtCAD(entry.cpp))
+  if (Number(entry.cpp2) > 0) row('CPP2', fmtCAD(entry.cpp2))
+  row('EI', fmtCAD(entry.ei))
+  row('Federal tax', fmtCAD(entry.federal_tax))
+  row('Provincial tax (AB)', fmtCAD(entry.provincial_tax))
+  divider()
+  row('Net pay to employee', fmtCAD(entry.net), { bold: true })
+  y += 16
+
+  // Employer-matched amounts
+  sectionTitle('Employer contribution (matched)')
+  if (employee?.self_employed) {
+    doc.setTextColor(...slateLt)
+    doc.setFontSize(9)
+    doc.text('Self-employed — CPP already includes both employee and employer', margin + 10, y)
+    y += 13
+    doc.text('portions. Not remitted through T4 payroll; settled via Schedule 8', margin + 10, y)
+    y += 13
+    doc.text('on your T1 return.', margin + 10, y)
+    y += 20
+    doc.setFontSize(10)
+  } else {
+    row('CPP (employer match)', fmtCAD(entry.employer_cpp))
+    if (Number(entry.employer_cpp2) > 0) row('CPP2 (employer match)', fmtCAD(entry.employer_cpp2))
+    row('EI (employer, 1.4x)', fmtCAD(entry.employer_ei))
+    y += 6
+  }
+
+  // ── Total remittance ──
+  y += 10
+  doc.setFillColor(30, 41, 59)
+  doc.roundedRect(margin, y - 20, pageWidth - margin * 2, 46, 6, 6, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text('TOTAL REMITTANCE DUE TO CRA', margin + 16, y)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text(fmtCAD(entry.total_remittance ?? run.total_remittance), pageWidth - margin - 16, y + 4, { align: 'right' })
+  y += 46
+
+  // ── Footer ──
+  y += 20
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...slateLt)
+  doc.text(
+    'Remittance due date depends on your CRA remitter type (regular, quarterly, threshold 1/2). ' +
+    'Confirm your due date at canada.ca before submitting payment.',
+    margin, y, { maxWidth: pageWidth - margin * 2 }
+  )
+
+  const fileName = `remittance-${employee?.name?.replace(/\s+/g, '-') || 'employee'}-${run.pay_date}.pdf`
+  doc.save(fileName)
+}
+
+/**
+ * Builds a one-page (or paginated) annual summary — one section per employee,
+ * with a running total per pay run and a grand total at the bottom. Useful
+ * for reconciling against your T4/T4A slips and CRA account balance at
+ * year end.
+ */
+function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 50
+  let y = 56
+
+  const teal = [13, 115, 119]
+  const slate = [30, 41, 59]
+  const slateMid = [71, 85, 105]
+  const slateLt = [148, 163, 184]
+  const border = [226, 232, 240]
+
+  const runById = Object.fromEntries(runs.map(r => [r.id, r]))
+  const byEmployee = {}
+  for (const e of entries) {
+    if (!byEmployee[e.employee_id]) byEmployee[e.employee_id] = []
+    byEmployee[e.employee_id].push(e)
+  }
+
+  const ensureSpace = (needed) => {
+    if (y + needed > pageHeight - 60) {
+      doc.addPage()
+      y = 56
+    }
+  }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(18)
+  doc.setTextColor(...slate)
+  doc.text(`${year} Payroll Remittance Summary`, margin, y)
+  y += 20
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(...slateLt)
+  doc.text(orgName || 'Company name not set', margin, y)
+  y += 24
+  doc.setDrawColor(...border)
+  doc.line(margin, y, pageWidth - margin, y)
+  y += 26
+
+  let grandTotal = { gross: 0, cpp: 0, cpp2: 0, ei: 0, fed: 0, prov: 0, empCpp: 0, empCpp2: 0, empEi: 0, remit: 0 }
+
+  for (const [empId, empEntries] of Object.entries(byEmployee)) {
+    ensureSpace(60)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(...teal)
+    doc.text(empNameById[empId] || 'Unknown employee', margin, y)
+    y += 18
+
+    doc.setFontSize(8.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...slateLt)
+    const cols = [
+      { label: 'PAY DATE', x: margin, align: 'left' },
+      { label: 'GROSS', x: margin + 130, align: 'right' },
+      { label: 'CPP+CPP2', x: margin + 210, align: 'right' },
+      { label: 'EI', x: margin + 285, align: 'right' },
+      { label: 'TAX', x: margin + 345, align: 'right' },
+      { label: 'EMPLOYER', x: margin + 420, align: 'right' },
+      { label: 'REMITTED', x: pageWidth - margin, align: 'right' },
+    ]
+    cols.forEach(c => doc.text(c.label, c.x, y, { align: c.align }))
+    y += 12
+    doc.setDrawColor(...border)
+    doc.line(margin, y - 4, pageWidth - margin, y - 4)
+
+    let empTotal = { gross: 0, remit: 0 }
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...slateMid)
+
+    for (const e of empEntries) {
+      ensureSpace(16)
+      const run = runById[e.payroll_run_id]
+      const cppTot = Number(e.cpp || 0) + Number(e.cpp2 || 0)
+      const empMatch = Number(e.employer_cpp || 0) + Number(e.employer_cpp2 || 0) + Number(e.employer_ei || 0)
+      doc.text(fmtDate(run?.pay_date), margin, y)
+      doc.text(fmtCAD(e.gross), margin + 130, y, { align: 'right' })
+      doc.text(fmtCAD(cppTot), margin + 210, y, { align: 'right' })
+      doc.text(fmtCAD(e.ei), margin + 285, y, { align: 'right' })
+      doc.text(fmtCAD(Number(e.federal_tax) + Number(e.provincial_tax)), margin + 345, y, { align: 'right' })
+      doc.text(fmtCAD(empMatch), margin + 420, y, { align: 'right' })
+      doc.text(fmtCAD(e.total_remittance), pageWidth - margin, y, { align: 'right' })
+      y += 15
+
+      empTotal.gross += Number(e.gross || 0)
+      empTotal.remit += Number(e.total_remittance || 0)
+      grandTotal.gross += Number(e.gross || 0)
+      grandTotal.cpp += Number(e.cpp || 0)
+      grandTotal.cpp2 += Number(e.cpp2 || 0)
+      grandTotal.ei += Number(e.ei || 0)
+      grandTotal.fed += Number(e.federal_tax || 0)
+      grandTotal.prov += Number(e.provincial_tax || 0)
+      grandTotal.empCpp += Number(e.employer_cpp || 0)
+      grandTotal.empCpp2 += Number(e.employer_cpp2 || 0)
+      grandTotal.empEi += Number(e.employer_ei || 0)
+      grandTotal.remit += Number(e.total_remittance || 0)
+    }
+
+    ensureSpace(20)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...slate)
+    doc.text('Subtotal', margin, y)
+    doc.text(fmtCAD(empTotal.gross), margin + 130, y, { align: 'right' })
+    doc.text(fmtCAD(empTotal.remit), pageWidth - margin, y, { align: 'right' })
+    y += 24
+  }
+
+  ensureSpace(50)
+  doc.setFillColor(30, 41, 59)
+  doc.roundedRect(margin, y - 20, pageWidth - margin * 2, 46, 6, 6, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.text(`TOTAL REMITTED TO CRA — ${year}`, margin + 16, y)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text(fmtCAD(grandTotal.remit), pageWidth - margin - 16, y + 4, { align: 'right' })
+  y += 46
+
+  y += 20
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...slateLt)
+  doc.text(
+    'Figures reflect the CRA rates in effect at the time each pay run was processed. ' +
+    'Reconcile against your CRA remittance receipts and T4 slips before filing.',
+    margin, y, { maxWidth: pageWidth - margin * 2 }
+  )
+
+  doc.save(`remittance-summary-${year}.pdf`)
+}
+
+const DEFAULT_FORM = { employee_id: '', period_start: '', period_end: '', pay_date: '', hours_worked: '', ei_exempt_override: null }
 
 export default function Payroll() {
   const { activeOrg }  = useOrg()
@@ -466,6 +795,9 @@ export default function Payroll() {
   const [editId, setEditId]     = useState(null)
   const [editData, setEditData] = useState({})
   const [editSaving, setEditSaving] = useState(false)
+  const [remittanceLoadingId, setRemittanceLoadingId] = useState(null)
+  const [yearSummaryLoading, setYearSummaryLoading] = useState(false)
+  const [summaryYear, setSummaryYear] = useState(new Date().getFullYear())
 
   useEffect(() => {
     if (activeOrg?.orgId) fetchAll()
@@ -495,10 +827,16 @@ export default function Payroll() {
     return Number(selectedEmp.pay_rate) || 0
   }, [selectedEmp, form.hours_worked])
 
+  const eiExemptEffective = useMemo(() => {
+    if (!selectedEmp) return false
+    if (selectedEmp.self_employed) return true
+    return form.ei_exempt_override !== null ? form.ei_exempt_override : !!selectedEmp.ei_exempt
+  }, [selectedEmp, form.ei_exempt_override])
+
   const deductionPreview = useMemo(() => {
     if (!selectedEmp || grossPreview <= 0) return { cpp: 0, cpp2: 0, ei: 0, federal_tax: 0, provincial_tax: 0, total: 0, net: 0 }
-    return calcDeductions(selectedEmp, grossPreview)
-  }, [selectedEmp, grossPreview])
+    return calcDeductions(selectedEmp, grossPreview, {}, form.ei_exempt_override !== null ? form.ei_exempt_override : undefined)
+  }, [selectedEmp, grossPreview, form.ei_exempt_override])
 
   // ── Create payroll run ──
   async function handleCreate(e) {
@@ -525,7 +863,9 @@ export default function Payroll() {
       }), { cpp: 0, cpp2: 0, ei: 0 })
 
       const gross = grossPreview
-      const ded   = calcDeductions(selectedEmp, gross, ytd)
+      const eiOverride = form.ei_exempt_override !== null ? form.ei_exempt_override : undefined
+      const ded   = calcDeductions(selectedEmp, gross, ytd, eiOverride)
+      const employerAmt = calcEmployerAmounts(ded, selectedEmp)
 
       const ytdGross = (pastEntries || []).reduce((s, p) => s + Number(p.gross || 0), 0) + gross
       const ytdCPP   = ytd.cpp  + ded.cpp
@@ -544,6 +884,7 @@ export default function Payroll() {
           total_gross:       gross,
           total_deductions:  ded.total,
           total_net:         ded.net,
+          total_remittance:  employerAmt.total_remittance,
         }])
         .select().single()
       if (runErr) throw runErr
@@ -562,6 +903,10 @@ export default function Payroll() {
           federal_tax:     ded.federal_tax,
           provincial_tax:  ded.provincial_tax,
           net:             ded.net,
+          employer_cpp:    employerAmt.employer_cpp,
+          employer_cpp2:   employerAmt.employer_cpp2,
+          employer_ei:     employerAmt.employer_ei,
+          total_remittance: employerAmt.total_remittance,
           ytd_gross:       ytdGross,
           ytd_cpp:         ytdCPP,
           ytd_cpp2:        ytdCPP2,
@@ -600,6 +945,73 @@ export default function Payroll() {
     await supabase.from('payroll_runs').delete().eq('id', run.id).eq('org_id', activeOrg.orgId)
     setStatusMsg({ ok: true, text: 'Run deleted.' })
     fetchAll()
+  }
+
+  // ── Remittance slip ──
+  async function printRemittanceSlip(run) {
+    setRemittanceLoadingId(run.id)
+    try {
+      const { data: entry, error: entryErr } = await supabase
+        .from('payroll_entries')
+        .select('*')
+        .eq('payroll_run_id', run.id)
+        .single()
+      if (entryErr || !entry) throw new Error('Could not load payroll entry for this run.')
+
+      const { data: employee, error: empErr } = await supabase
+        .from('employees')
+        .select('name, self_employed, ei_exempt')
+        .eq('id', entry.employee_id)
+        .single()
+      if (empErr) throw new Error('Could not load employee for this run.')
+
+      // Adjust `activeOrg.name` below if your OrgContext exposes the company
+      // name under a different field (e.g. activeOrg.orgName, activeOrg.company_name)
+      generateRemittancePDF(run, entry, employee, activeOrg?.name)
+    } catch (err) {
+      setStatusMsg({ ok: false, text: err.message })
+    } finally {
+      setRemittanceLoadingId(null)
+    }
+  }
+
+  // ── Year-end remittance summary ──
+  async function printYearEndSummary(year) {
+    setYearSummaryLoading(true)
+    try {
+      const yearStart = `${year}-01-01`
+      const yearEnd   = `${year}-12-31`
+
+      const { data: yearRuns, error: runsErr } = await supabase
+        .from('payroll_runs')
+        .select('id, pay_date, total_gross, total_deductions, total_net, total_remittance')
+        .eq('org_id', activeOrg.orgId)
+        .gte('pay_date', yearStart)
+        .lte('pay_date', yearEnd)
+        .order('pay_date', { ascending: true })
+      if (runsErr) throw runsErr
+      if (!yearRuns || yearRuns.length === 0) {
+        setStatusMsg({ ok: false, text: `No payroll runs found for ${year}.` })
+        return
+      }
+
+      const runIds = yearRuns.map(r => r.id)
+      const { data: yearEntries, error: entriesErr } = await supabase
+        .from('payroll_entries')
+        .select('payroll_run_id, employee_id, gross, cpp, cpp2, ei, federal_tax, provincial_tax, net, employer_cpp, employer_cpp2, employer_ei, total_remittance')
+        .in('payroll_run_id', runIds)
+      if (entriesErr) throw entriesErr
+
+      const employeeIds = [...new Set((yearEntries || []).map(e => e.employee_id))]
+      const { data: emps } = await supabase.from('employees').select('id, name').in('id', employeeIds)
+      const empNameById = Object.fromEntries((emps || []).map(e => [e.id, e.name]))
+
+      generateYearEndSummaryPDF(year, yearRuns, yearEntries || [], empNameById, activeOrg?.name)
+    } catch (err) {
+      setStatusMsg({ ok: false, text: err.message })
+    } finally {
+      setYearSummaryLoading(false)
+    }
   }
 
   // ── Plan gate ──
@@ -644,7 +1056,7 @@ export default function Payroll() {
               <div className="pr-field">
                 <label>Employee *</label>
                 <select className="pr-input pr-select" value={form.employee_id}
-                  onChange={e => setForm(p => ({ ...p, employee_id: e.target.value, hours_worked: '' }))}>
+                  onChange={e => setForm(p => ({ ...p, employee_id: e.target.value, hours_worked: '', ei_exempt_override: null }))}>
                   <option value="">Select employee…</option>
                   {employees.map(emp => (
                     <option key={emp.id} value={emp.id}>
@@ -662,6 +1074,26 @@ export default function Payroll() {
                 </div>
               )}
             </div>
+
+            {selectedEmp && !selectedEmp.self_employed && (
+              <div className="pr-field">
+                <label>EI Status (this run)</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={eiExemptEffective}
+                    onChange={e => setForm(p => ({ ...p, ei_exempt_override: e.target.checked }))}
+                  />
+                  EI exempt for this run
+                  {selectedEmp.ei_exempt && form.ei_exempt_override === null && (
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>(default for this employee)</span>
+                  )}
+                  {form.ei_exempt_override !== null && form.ei_exempt_override !== !!selectedEmp.ei_exempt && (
+                    <span style={{ fontSize: 11, color: '#d97706' }}>(override — differs from employee default)</span>
+                  )}
+                </label>
+              </div>
+            )}
 
             <div className="pr-grid-2">
               <div className="pr-field">
@@ -757,6 +1189,19 @@ export default function Payroll() {
         <div className="pr-panel">
           <div className="pr-panel-header">
             <span className="pr-panel-title">Payroll History</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <select className="pr-input pr-select" value={summaryYear}
+                onChange={e => setSummaryYear(Number(e.target.value))}
+                style={{ width: 100, fontSize: 12, padding: '6px 10px' }}>
+                {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map(yr => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
+              <button className="pr-btn" style={{ fontSize: 12, padding: '7px 14px' }}
+                onClick={() => printYearEndSummary(summaryYear)} disabled={yearSummaryLoading}>
+                {yearSummaryLoading ? 'Generating…' : `Export ${summaryYear} Remittance Summary`}
+              </button>
+            </div>
           </div>
           {loading ? (
             <div className="pr-spinner" />
@@ -772,7 +1217,7 @@ export default function Payroll() {
                   <th style={{ textAlign: 'right' }}>Deductions</th>
                   <th style={{ textAlign: 'right' }}>Net</th>
                   <th>Status</th>
-                  <th style={{ width: 140 }}></th>
+                  <th style={{ width: 190 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -829,6 +1274,10 @@ export default function Payroll() {
                     <td><span className={`pr-badge pr-badge--${run.status}`}>{run.status}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' }}
+                          onClick={() => printRemittanceSlip(run)} disabled={remittanceLoadingId === run.id}>
+                          {remittanceLoadingId === run.id ? '…' : 'Slip'}
+                        </button>
                         <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => startEdit(run)}>Edit</button>
                         <button className="pr-btn pr-btn--danger" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => deleteRun(run)}>Delete</button>
                       </div>
