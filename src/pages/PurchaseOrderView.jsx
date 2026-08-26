@@ -178,6 +178,10 @@ const css = `
   .po-total-row--grand .po-total-value {
     font-family: 'Fraunces', Georgia, serif; font-size: 26px; font-weight: 600; color: var(--teal);
   }
+  .po-total-row--paid .po-total-value { color: var(--green); }
+  .po-total-row--balance .po-total-value { font-weight: 600; }
+  .po-total-row--balance .po-total-value--zero { color: var(--green); }
+  .po-total-row--balance .po-total-value--due { color: var(--red); }
   .po-total-divider { width: 260px; height: 1px; background: var(--border); margin: 4px 0; }
 
   .po-empty-items { text-align: center; padding: 32px; color: var(--slate-lt); font-size: 13px; border: 1.5px dashed var(--border); border-radius: 10px; }
@@ -201,6 +205,7 @@ const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA',
 const today = () => new Date().toISOString().split('T')[0]
 
 const STATUS_LABELS = { draft: 'Draft', sent: 'Sent', received: 'Received', canceled: 'Canceled' }
+const PAYMENT_METHODS = ['Cash', 'Cheque', 'EFT', 'Credit Card']
 
 function StatusBadge({ status, edit, value, onChange }) {
   if (edit) return (
@@ -232,6 +237,8 @@ export default function PurchaseOrderView() {
   const [editExpected, setEditExpected] = useState('')
   const [editNotes, setEditNotes] = useState('')
   const [editItems, setEditItems] = useState([])
+  const [editPaymentMethod, setEditPaymentMethod] = useState('')
+  const [editAmountPaid, setEditAmountPaid] = useState('')
 
   async function fetchPO() {
     if (!activeOrg?.orgId) return
@@ -272,6 +279,8 @@ export default function PurchaseOrderView() {
       setEditExpected(data.expected_date || '')
       setEditNotes(data.notes || '')
       setEditItems(items || [])
+      setEditPaymentMethod(data.payment_method || '')
+      setEditAmountPaid(data.amount_paid != null ? String(data.amount_paid) : '0')
 
       // New POs with no line items open straight into edit mode
       if (!items || items.length === 0) setIsEditing(true)
@@ -321,6 +330,8 @@ export default function PurchaseOrderView() {
     setEditDate(po.date || today())
     setEditExpected(po.expected_date || '')
     setEditNotes(po.notes || '')
+    setEditPaymentMethod(po.payment_method || '')
+    setEditAmountPaid(po.amount_paid != null ? String(po.amount_paid) : '0')
     setIsEditing(false)
     fetchPO()
   }
@@ -328,6 +339,7 @@ export default function PurchaseOrderView() {
   const editSubtotal = editItems.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
   const editTax      = editSubtotal * 0.05
   const editTotal    = editSubtotal + editTax
+  const editBalance  = editTotal - (Number(editAmountPaid) || 0)
 
   async function saveChanges() {
     setSaving(true)
@@ -335,15 +347,17 @@ export default function PurchaseOrderView() {
       const { error: poErr } = await supabase
         .from('purchase_orders')
         .update({
-          vendor_id:     editVendorId || null,
-          number:        editNumber,
-          status:        editStatus,
-          date:          editDate,
-          expected_date: editExpected || null,
-          notes:         editNotes,
-          subtotal:      editSubtotal,
-          tax:           editTax,
-          total:         editTotal,
+          vendor_id:      editVendorId || null,
+          number:         editNumber,
+          status:         editStatus,
+          date:           editDate,
+          expected_date:  editExpected || null,
+          notes:          editNotes,
+          subtotal:       editSubtotal,
+          tax:            editTax,
+          total:          editTotal,
+          payment_method: editPaymentMethod || null,
+          amount_paid:    Number(editAmountPaid) || 0,
         })
         .eq('id', id)
         .eq('org_id', activeOrg.orgId)
@@ -407,6 +421,7 @@ export default function PurchaseOrderView() {
   )
 
   const selectedVendor = vendors.find(v => v.id === editVendorId)
+  const viewBalance = (po.total || 0) - (po.amount_paid || 0)
 
   return (
     <>
@@ -482,6 +497,10 @@ export default function PurchaseOrderView() {
                       <span className="po-date-label">Expected</span>
                       <span className="po-date-value">{po.expected_date ? fmtDate(po.expected_date) : '—'}</span>
                     </div>
+                    <div className="po-date-row">
+                      <span className="po-date-label">Payment Method</span>
+                      <span className="po-date-value">{po.payment_method || '—'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -522,6 +541,16 @@ export default function PurchaseOrderView() {
                     <span className="po-total-label">Total</span>
                     <span className="po-total-value">{fmt(po.total)}</span>
                   </div>
+                  <div className="po-total-row po-total-row--paid">
+                    <span className="po-total-label">Amount Paid</span>
+                    <span className="po-total-value">{fmt(po.amount_paid)}</span>
+                  </div>
+                  <div className="po-total-row po-total-row--balance">
+                    <span className="po-total-label">Balance Due</span>
+                    <span className={`po-total-value ${viewBalance <= 0 ? 'po-total-value--zero' : 'po-total-value--due'}`}>
+                      {fmt(viewBalance)}
+                    </span>
+                  </div>
                 </div>
 
                 {po.notes && (
@@ -556,6 +585,22 @@ export default function PurchaseOrderView() {
                     <div className="po-field">
                       <label className="po-field-label">Expected Date</label>
                       <input className="po-input" type="date" value={editExpected} onChange={e => setEditExpected(e.target.value)} />
+                    </div>
+                    <div className="po-field">
+                      <label className="po-field-label">Payment Method</label>
+                      <select className="po-input po-select" value={editPaymentMethod} onChange={e => setEditPaymentMethod(e.target.value)}>
+                        <option value="">Select…</option>
+                        {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="po-field">
+                      <label className="po-field-label">Amount Paid</label>
+                      <input
+                        className="po-input"
+                        type="number" min="0" step="any" placeholder="0.00"
+                        value={editAmountPaid}
+                        onChange={e => setEditAmountPaid(e.target.value)}
+                      />
                     </div>
                   </div>
                 </div>
@@ -625,6 +670,16 @@ export default function PurchaseOrderView() {
                   <div className="po-total-row po-total-row--grand">
                     <span className="po-total-label">Total</span>
                     <span className="po-total-value">{fmt(editTotal)}</span>
+                  </div>
+                  <div className="po-total-row po-total-row--paid">
+                    <span className="po-total-label">Amount Paid</span>
+                    <span className="po-total-value">{fmt(Number(editAmountPaid) || 0)}</span>
+                  </div>
+                  <div className="po-total-row po-total-row--balance">
+                    <span className="po-total-label">Balance Due</span>
+                    <span className={`po-total-value ${editBalance <= 0 ? 'po-total-value--zero' : 'po-total-value--due'}`}>
+                      {fmt(editBalance)}
+                    </span>
                   </div>
                 </div>
 
