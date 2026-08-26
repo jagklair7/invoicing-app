@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import VendorInvoicesSection from '../components/VendorInvoicesSection'
 
 const PROVINCES = [
   'AB','BC','MB','NB','NL','NS','ON','PE','QC','SK','NT','NU','YT'
@@ -25,6 +26,7 @@ export default function Vendors() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [formData, setFormData] = useState(DEFAULT_FORM)
+  const [expandedId, setExpandedId] = useState(null)
 
   useEffect(() => {
     if (activeOrg?.orgId) fetchVendors()
@@ -117,6 +119,10 @@ export default function Vendors() {
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const toggleExpanded = (vendorId) => {
+    setExpandedId(prev => (prev === vendorId ? null : vendorId))
   }
 
   return (
@@ -213,23 +219,41 @@ export default function Vendors() {
                 <td colSpan={4} className="px-6 py-10 text-center text-gray-400 text-sm">No vendors yet. Add your first vendor above.</td>
               </tr>
             ) : vendors.map(vendor => (
-              <tr key={vendor.id} className="hover:bg-slate-50">
-                <td className="px-6 py-4">
-                  <div className="font-semibold text-slate-900">{vendor.name}</div>
-                  {vendor.notes && <div className="text-xs text-slate-500 mt-0.5 max-w-xs truncate">{vendor.notes}</div>}
-                </td>
-                <td className="px-6 py-4 text-slate-700">
-                  <div>{vendor.email || '—'}</div>
-                  {vendor.phone && <div className="text-xs text-slate-500">{vendor.phone}</div>}
-                </td>
-                <td className="px-6 py-4 text-slate-700">
-                  {[vendor.city, vendor.province].filter(Boolean).join(', ') || '—'}
-                </td>
-                <td className="px-6 py-4 text-right space-x-4">
-                  <button onClick={() => startEdit(vendor)} className="text-teal-600 hover:underline text-sm font-semibold">Edit</button>
-                  <button onClick={() => deleteVendor(vendor.id)} className="text-red-500 hover:underline text-sm font-semibold">Delete</button>
-                </td>
-              </tr>
+              <>
+                <tr key={vendor.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={() => toggleExpanded(vendor.id)}
+                      className="flex items-center gap-2 text-left"
+                      title="Show/hide vendor invoices"
+                    >
+                      <span className={`text-gray-400 text-xs transition-transform ${expandedId === vendor.id ? 'rotate-90' : ''}`}>▶</span>
+                      <span>
+                        <div className="font-semibold text-slate-900">{vendor.name}</div>
+                        {vendor.notes && <div className="text-xs text-slate-500 mt-0.5 max-w-xs truncate">{vendor.notes}</div>}
+                      </span>
+                    </button>
+                  </td>
+                  <td className="px-6 py-4 text-slate-700">
+                    <div>{vendor.email || '—'}</div>
+                    {vendor.phone && <div className="text-xs text-slate-500">{vendor.phone}</div>}
+                  </td>
+                  <td className="px-6 py-4 text-slate-700">
+                    {[vendor.city, vendor.province].filter(Boolean).join(', ') || '—'}
+                  </td>
+                  <td className="px-6 py-4 text-right space-x-4">
+                    <button onClick={() => startEdit(vendor)} className="text-teal-600 hover:underline text-sm font-semibold">Edit</button>
+                    <button onClick={() => deleteVendor(vendor.id)} className="text-red-500 hover:underline text-sm font-semibold">Delete</button>
+                  </td>
+                </tr>
+                {expandedId === vendor.id && (
+                  <tr key={`${vendor.id}-invoices`}>
+                    <td colSpan={4} className="p-0">
+                      <VendorInvoicesSection vendorId={vendor.id} orgId={activeOrg.orgId} />
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>
