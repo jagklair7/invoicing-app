@@ -3,6 +3,8 @@
 // Tracks invoices vendors send directly (no PO) — invoice #, date,
 // amount, payment method, amount paid, and the date paid. Lives as an
 // expandable section under each vendor row in Vendors.jsx.
+// Supports editing an existing entry (editingId pattern mirrors
+// Vendors.jsx's own add/edit form).
 //
 // Props:
 //   vendorId — vendor UUID
@@ -33,6 +35,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [error, setError] = useState('')
@@ -58,6 +61,28 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
     setForm(prev => ({ ...prev, [name]: value }))
   }
 
+  function startEdit(inv) {
+    setEditingId(inv.id)
+    setForm({
+      invoice_number: inv.invoice_number || '',
+      invoice_date: inv.invoice_date || new Date().toISOString().split('T')[0],
+      amount: inv.amount ?? '',
+      amount_paid: inv.amount_paid ?? '',
+      payment_method: inv.payment_method || 'EFT',
+      paid_date: inv.paid_date || '',
+      notes: inv.notes || '',
+    })
+    setError('')
+    setShowForm(true)
+  }
+
+  function cancelForm() {
+    setShowForm(false)
+    setEditingId(null)
+    setForm(DEFAULT_FORM)
+    setError('')
+  }
+
   async function saveInvoice(e) {
     e.preventDefault()
     setError('')
@@ -69,25 +94,35 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
     }
     const amountPaid = form.amount_paid ? parseFloat(form.amount_paid) : 0
 
+    const payload = {
+      org_id: orgId,
+      vendor_id: vendorId,
+      invoice_number: form.invoice_number.trim() || null,
+      invoice_date: form.invoice_date,
+      amount,
+      amount_paid: amountPaid,
+      payment_method: form.payment_method,
+      paid_date: form.paid_date || null,
+      notes: form.notes.trim() || null,
+    }
+
     setSaving(true)
     try {
-      const { error: insErr } = await supabase
-        .from('vendor_invoices')
-        .insert({
-          org_id: orgId,
-          vendor_id: vendorId,
-          invoice_number: form.invoice_number.trim() || null,
-          invoice_date: form.invoice_date,
-          amount,
-          amount_paid: amountPaid,
-          payment_method: form.payment_method,
-          paid_date: form.paid_date || null,
-          notes: form.notes.trim() || null,
-        })
-      if (insErr) throw insErr
+      if (editingId) {
+        const { error: updErr } = await supabase
+          .from('vendor_invoices')
+          .update(payload)
+          .eq('id', editingId)
+          .eq('org_id', orgId)
+        if (updErr) throw updErr
+      } else {
+        const { error: insErr } = await supabase
+          .from('vendor_invoices')
+          .insert(payload)
+        if (insErr) throw insErr
+      }
 
-      setForm(DEFAULT_FORM)
-      setShowForm(false)
+      cancelForm()
       fetchInvoices()
     } catch (err) {
       setError(err.message || 'Unable to save invoice.')
@@ -107,6 +142,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
         .eq('org_id', orgId)
       if (delErr) throw delErr
       setInvoices(prev => prev.filter(i => i.id !== inv.id))
+      if (editingId === inv.id) cancelForm()
     } catch (err) {
       alert('Failed to remove invoice: ' + err.message)
     } finally {
@@ -157,7 +193,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
               {invoices.map(inv => {
                 const balance = Number(inv.amount || 0) - Number(inv.amount_paid || 0)
                 return (
-                  <tr key={inv.id} className="hover:bg-slate-50">
+                  <tr key={inv.id} className={`hover:bg-slate-50 ${editingId === inv.id ? 'bg-teal-50/50' : ''}`}>
                     <td className="px-4 py-3 font-medium text-slate-800">{inv.invoice_number || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{fmtDate(inv.invoice_date)}</td>
                     <td className="px-4 py-3 text-slate-600">{inv.payment_method || '—'}</td>
@@ -167,7 +203,13 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
                     <td className={`px-4 py-3 text-right font-semibold ${balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {balance > 0 ? fmt(balance) : '✓ Paid'}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap space-x-3">
+                      <button
+                        onClick={() => startEdit(inv)}
+                        className="text-teal-600 hover:underline text-xs font-semibold"
+                      >
+                        Edit
+                      </button>
                       <button
                         onClick={() => deleteInvoice(inv)}
                         disabled={deletingId === inv.id}
@@ -200,6 +242,9 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
 
       {showForm && (
         <form onSubmit={saveInvoice} className="bg-white border border-teal-200 rounded-xl p-4 grid gap-3">
+          {editingId && (
+            <div className="text-xs font-semibold text-teal-700 -mb-1">Editing invoice</div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Invoice #</label>
@@ -285,7 +330,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
           <div className="flex gap-2 justify-end">
             <button
               type="button"
-              onClick={() => { setShowForm(false); setForm(DEFAULT_FORM); setError('') }}
+              onClick={cancelForm}
               disabled={saving}
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
             >
@@ -296,7 +341,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
               disabled={saving}
               className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 transition disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save Invoice'}
+              {saving ? 'Saving…' : editingId ? 'Update Invoice' : 'Save Invoice'}
             </button>
           </div>
         </form>
