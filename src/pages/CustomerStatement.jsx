@@ -385,6 +385,12 @@ export default function CustomerStatement() {
 
   const [customer, setCustomer]   = useState(null)
   const [invoices, setInvoices]   = useState([])
+  // Map of invoice_id -> total amount paid against that invoice, built from
+  // invoice_payments. This is the same source of truth PaymentsSection.jsx
+  // uses (balanceDue = invoiceTotal - sum(invoice_payments.amount)) — the
+  // statement previously trusted invoices.status === 'paid' instead, which
+  // doesn't reflect partial payments since there's no 'partial' status value.
+  const [paymentsByInvoice, setPaymentsByInvoice] = useState({})
   const [loading, setLoading]     = useState(true)
   const [bizName, setBizName]     = useState('Klair Computer Inc.')
   const [dateFrom, setDateFrom]   = useState(firstOfMonth(-2))
@@ -413,7 +419,27 @@ export default function CustomerStatement() {
       }, {})
       const bizName = settings.company_name || 'Klair Computer Inc.'
       if (custRes.data)    setCustomer(custRes.data)
-      if (invRes.data)     setInvoices(invRes.data)
+
+      const fetchedInvoices = invRes.data || []
+
+      // Pull every payment recorded against these invoices and sum by
+      // invoice_id, mirroring PaymentsSection's totalPaid calculation.
+      let paidMap = {}
+      if (fetchedInvoices.length > 0) {
+        const invoiceIds = fetchedInvoices.map(inv => inv.id)
+        const { data: paymentsData, error: paymentsErr } = await supabase
+          .from('invoice_payments')
+          .select('invoice_id, amount')
+          .in('invoice_id', invoiceIds)
+        if (paymentsErr) throw paymentsErr
+        paidMap = (paymentsData || []).reduce((acc, p) => {
+          acc[p.invoice_id] = (acc[p.invoice_id] || 0) + Number(p.amount)
+          return acc
+        }, {})
+      }
+      setPaymentsByInvoice(paidMap)
+      setInvoices(fetchedInvoices)
+
       if (settingsRes.data?.find(s => s.key === 'business_name')) {
         setBizName(settingsRes.data.find(s => s.key === 'business_name').value)
       }
@@ -433,20 +459,26 @@ export default function CustomerStatement() {
     return inv.status
   }
 
-  // Running balance
+  // Running balance — nets out payments recorded against each invoice
+  // (invoice_payments), not just invoices whose status happens to be
+  // 'paid'. An invoice with a partial payment keeps status 'sent' (there's
+  // no 'partial' status in the DB check constraint), so relying on status
+  // alone was the source of the discrepancy.
   let runningBalance = 0
   const rows = invoices.map(inv => {
-    const amount = Number(inv.total || 0)
-    if (inv.status !== 'paid') runningBalance += amount
-    return { ...inv, _amount: amount, _balance: inv.status === 'paid' ? null : runningBalance }
+    const amount    = Number(inv.total || 0)
+    const paid      = paymentsByInvoice[inv.id] || 0
+    const remaining = Math.max(amount - paid, 0)
+    if (remaining > 0) runningBalance += remaining
+    return { ...inv, _amount: amount, _paid: paid, _remaining: remaining, _balance: remaining > 0 ? runningBalance : null }
   })
 
   const totalInvoiced   = invoices.reduce((s, i) => s + Number(i.total || 0), 0)
-  const totalPaid       = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + Number(i.total || 0), 0)
+  const totalPaid       = invoices.reduce((s, i) => s + (paymentsByInvoice[i.id] || 0), 0)
   const totalOutstanding = totalInvoiced - totalPaid
   const totalOverdue    = invoices
     .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
-    .reduce((s, i) => s + Number(i.total || 0), 0)
+    .reduce((s, i) => s + Math.max(Number(i.total || 0) - (paymentsByInvoice[i.id] || 0), 0), 0)
 
   const periodLabel = `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
   
@@ -591,9 +623,9 @@ export default function CustomerStatement() {
                         </td>
                         <td className="stmt-td-amount">{fmt(inv._amount)}</td>
                         <td className={`stmt-td-balance`} style={{
-                          color: inv.status === 'paid' ? '#059669' : inv._balance > 0 ? '#d97706' : 'var(--slate)'
+                          color: inv._remaining === 0 ? '#059669' : inv._balance > 0 ? '#d97706' : 'var(--slate)'
                         }}>
-                          {inv.status === 'paid' ? '—' : fmt(inv._balance)}
+                          {inv._remaining === 0 ? '—' : fmt(inv._balance)}
                         </td>
                       </tr>
                     ))}
