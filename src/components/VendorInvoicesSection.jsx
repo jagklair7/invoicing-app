@@ -1,8 +1,8 @@
 // src/components/VendorInvoicesSection.jsx
 //
 // Tracks invoices vendors send directly (no PO) — invoice #, date,
-// amount, payment method, and amount paid. Lives as an expandable
-// section under each vendor row in Vendors.jsx.
+// amount, payment method, amount paid, and the date paid. Lives as an
+// expandable section under each vendor row in Vendors.jsx.
 //
 // Props:
 //   vendorId — vendor UUID
@@ -25,6 +25,7 @@ const DEFAULT_FORM = {
   amount: '',
   amount_paid: '',
   payment_method: 'EFT',
+  paid_date: '',
   notes: '',
 }
 
@@ -80,6 +81,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
           amount,
           amount_paid: amountPaid,
           payment_method: form.payment_method,
+          paid_date: form.paid_date || null,
           notes: form.notes.trim() || null,
         })
       if (insErr) throw insErr
@@ -144,6 +146,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
                 <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400">Invoice #</th>
                 <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400">Date</th>
                 <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400">Method</th>
+                <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400">Paid On</th>
                 <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400 text-right">Amount</th>
                 <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400 text-right">Paid</th>
                 <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-400 text-right">Balance</th>
@@ -158,6 +161,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
                     <td className="px-4 py-3 font-medium text-slate-800">{inv.invoice_number || '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{fmtDate(inv.invoice_date)}</td>
                     <td className="px-4 py-3 text-slate-600">{inv.payment_method || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600">{fmtDate(inv.paid_date)}</td>
                     <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(inv.amount)}</td>
                     <td className="px-4 py-3 text-right text-emerald-600 font-medium">{fmt(inv.amount_paid)}</td>
                     <td className={`px-4 py-3 text-right font-semibold ${balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
@@ -208,7 +212,7 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Date</label>
+              <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Invoice Date</label>
               <input
                 name="invoice_date"
                 type="date"
@@ -253,15 +257,27 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Notes</label>
-            <input
-              name="notes"
-              value={form.notes}
-              onChange={handleChange}
-              placeholder="Optional"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Paid On</label>
+              <input
+                name="paid_date"
+                type="date"
+                value={form.paid_date}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Notes</label>
+              <input
+                name="notes"
+                value={form.notes}
+                onChange={handleChange}
+                placeholder="Optional"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+              />
+            </div>
           </div>
 
           {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-xs">{error}</div>}
