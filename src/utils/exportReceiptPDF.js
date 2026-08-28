@@ -254,7 +254,7 @@ export async function exportReceiptPDF(payment, invoice, customer, orgId) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
   setColor(doc, grandColor)
-  doc.text(fullyPaid ? '✓ Paid in Full' : fmt(balanceDue), valueX, y + 2.5, { align: 'right' })
+  doc.text(fullyPaid ? '' : fmt(balanceDue), valueX, y + 2.5, { align: 'right' })
   y += 14
 
   // ── Footer ───────────────────────────────────────────────────────────────
@@ -270,6 +270,7 @@ export async function exportReceiptPDF(payment, invoice, customer, orgId) {
   doc.text(COMPANY.name + '  ·  ' + COMPANY.phone, pw / 2, footerY + 9.5, { align: 'center' })
 
   const filename = `receipt-${invoice.number || 'invoice'}-${fmtDate(payment.payment_date)}.pdf`
+  doc.save(filename)
   const pdfBase64 = doc.output('datauristring')
   return { pdfBase64, filename }
 }

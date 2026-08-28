@@ -1193,6 +1193,8 @@ export default function InvoiceView() {
 
   const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_type !== 'none')
 
+  console.log('DEBUG customer:', customer, 'invoice:', invoice)
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -1451,6 +1453,8 @@ export default function InvoiceView() {
                         invoiceId={id}
                         invoiceTotal={total}
                         orgId={activeOrg.orgId}
+                        invoice={invoice}
+                        customer={customer}
                         onPaymentAdded={() => fetchInvoice()}
                       />
               </>
