@@ -358,44 +358,6 @@ const css = `
   }
   .plan-upgrade-link:hover { text-decoration: underline; }
 `
-// Returns full plan + usage info for the Settings page
-export async function getPlanStatus(orgId, userId) {
-  const { data: sub } = await supabase
-    .from('org_subscriptions')
-    .select('plan_id, status, plans(name, price_monthly, max_employees, max_invoices, max_orgs)')
-    .eq('org_id', orgId)
-    .single()
-
-  const plan = sub?.plans || null
-  
-  const invoicesUsed = await countInvoicesThisMonth(orgId)
-
-  const { count: employeesUsed } = await supabase
-    .from('employees')
-    .select('id', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-
-  let orgsOwned = 0
-  if (userId) {
-    const { count } = await supabase
-      .from('organizations')
-      .select('id', { count: 'exact', head: true })
-      .eq('owner_id', userId)
-    orgsOwned = count || 0
-  }
-
-  return {
-    planName: plan?.name || null,
-    priceMonthly: plan?.price_monthly ?? null,
-    maxInvoices: plan?.max_invoices ?? null,
-    maxEmployees: plan?.max_employees ?? null,
-    maxOrgs: plan?.max_orgs ?? null,
-    invoicesUsed,
-    employeesUsed: employeesUsed || 0,
-    orgsOwned,
-  }
-}
-
 function UsageStat({ label, used, max }) {
   const unlimited = max === -1 || max == null
   const pct = unlimited ? 0 : Math.min(100, (used / max) * 100)
