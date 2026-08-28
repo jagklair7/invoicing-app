@@ -299,7 +299,8 @@ const css = `
   color: #0d7377;
   margin-left: 8px;
 }
-  .admin-user-row {
+
+.admin-user-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -369,7 +370,7 @@ const PLAN_FEATURES = [
 export default function AdminPanel() {
   const { isSuperAdmin } = useOrg()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('global') // 'global' | 'plans' | 'orgs'
+  const [tab, setTab] = useState('global') // 'global' | 'plans' | 'orgs' | 'users'
 
   // Global flags
   const [flags, setFlags]   = useState([])
@@ -385,11 +386,10 @@ export default function AdminPanel() {
   const [selectedOrg, setSelectedOrg] = useState('')
   const [overrides, setOverrides] = useState([]) // merged: flag + override
 
-    // Users & plans (all orgs with owner + subscription)
+  // Users & plans (all orgs with owner + subscription)
   const [orgAccounts, setOrgAccounts] = useState([])
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [planChangeSaving, setPlanChangeSaving] = useState(null) // org_id being changed
-
   const [suspendSaving, setSuspendSaving] = useState(null)
   const [deletingOrgId, setDeletingOrgId] = useState(null)
 
@@ -398,6 +398,7 @@ export default function AdminPanel() {
     fetchFlags()
     fetchPlans()
     fetchOrgs()
+    fetchOrgAccounts()
   }, [isSuperAdmin])
 
   useEffect(() => {
@@ -437,7 +438,7 @@ export default function AdminPanel() {
     setPlans(data || [])
   }
 
-    async function fetchOrgAccounts() {
+  async function fetchOrgAccounts() {
     setAccountsLoading(true)
     const { data: allOrgs } = await supabase
       .from('organizations')
@@ -465,15 +466,7 @@ export default function AdminPanel() {
     setAccountsLoading(false)
   }
 
-    useEffect(() => {
-    if (!isSuperAdmin) { navigate('/'); return }
-    fetchFlags()
-    fetchPlans()
-    fetchOrgs()
-    fetchOrgAccounts()
-  }, [isSuperAdmin])
-
-    async function changeOrgPlan(orgId, newPlanId) {
+  async function changeOrgPlan(orgId, newPlanId) {
     setPlanChangeSaving(orgId)
     try {
       const { data: existing } = await supabase
@@ -497,6 +490,41 @@ export default function AdminPanel() {
       alert('Failed to change plan: ' + err.message)
     } finally {
       setPlanChangeSaving(null)
+    }
+  }
+
+  async function toggleSuspend(org) {
+    if (!org.subscription) return
+    setSuspendSaving(org.id)
+    try {
+      const newStatus = org.subscription.status === 'suspended' ? 'active' : 'suspended'
+      await supabase
+        .from('org_subscriptions')
+        .update({ status: newStatus })
+        .eq('org_id', org.id)
+      await fetchOrgAccounts()
+    } catch (err) {
+      alert('Failed to update status: ' + err.message)
+    } finally {
+      setSuspendSaving(null)
+    }
+  }
+
+  async function handleAdminDeleteOrg(org) {
+    const confirmed = window.confirm(
+      `Delete "${org.name}" and ALL its data (invoices, customers, products, settings)? This cannot be undone.`
+    )
+    if (!confirmed) return
+
+    setDeletingOrgId(org.id)
+    try {
+      const { error } = await supabase.rpc('delete_organization', { org_id_input: org.id })
+      if (error) throw error
+      await fetchOrgAccounts()
+    } catch (err) {
+      alert('Failed to delete: ' + err.message)
+    } finally {
+      setDeletingOrgId(null)
     }
   }
 
@@ -652,7 +680,7 @@ export default function AdminPanel() {
           </>
         )}
 
-                {/* ── Users & Plans ── */}
+        {/* ── Users & Plans ── */}
         {tab === 'users' && (
           <>
             <div className="admin-section-title">All Signed-Up Organizations</div>
@@ -663,41 +691,6 @@ export default function AdminPanel() {
               )}
               {!accountsLoading && orgAccounts.map(org => (
                 <div key={org.id} className="admin-user-row">
-                  <div className="admin-user-info">
-                    <div className="admin-user-org-name">{org.name}</div>
-                    <div className="admin-user-email">
-                      {org.owner?.email || org.owner?.full_name || '— no owner profile —'}
-                    </div>
-                    <div className="admin-user-date">
-                      Joined {new Date(org.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}
-                    </div>
-                  </div>
-
-                  {org.subscription ? (
-                    <span className="admin-status-pill">{org.subscription.status}</span>
-                  ) : (
-                    <span className="admin-status-pill admin-status-pill--none">No plan</span>
-                  )}
-
-                  <select
-                    className="admin-plan-select"
-                    value={org.subscription?.plan_id || ''}
-                    onChange={e => changeOrgPlan(org.id, e.target.value)}
-                    disabled={planChangeSaving === org.id}
-                  >
-                    <option value="" disabled>Select plan…</option>
-                    {plans.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name.charAt(0).toUpperCase() + p.name.slice(1)} — ${p.price_monthly}/mo
-                      </option>
-                    ))}
-                  </select>
-
-                  {planChangeSaving === org.id && <span className="admin-saving">Saving…</span>}
-                </div>
-              ))}
-
-                              <div key={org.id} className="admin-user-row">
                   <div className="admin-user-info">
                     <div className="admin-user-org-name">{org.name}</div>
                     <div className="admin-user-email">
@@ -754,7 +747,7 @@ export default function AdminPanel() {
                     {deletingOrgId === org.id ? 'Deleting…' : 'Delete'}
                   </button>
                 </div>
-
+              ))}
             </div>
           </>
         )}
