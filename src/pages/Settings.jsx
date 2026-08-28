@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { useNavigate } from 'react-router-dom'
+import { getPlanStatus } from '../utils/planLimits'
 
 const css = `
   .settings-root {
@@ -287,7 +288,136 @@ const css = `
     .settings-grid { grid-template-columns: 1fr; }
     .settings-field--full { grid-column: 1; }
   }
+      .plan-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .plan-name-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #0d7377;
+    color: white;
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: capitalize;
+  }
+  .plan-price {
+    font-size: 13px;
+    color: #64748b;
+  }
+  .plan-usage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+  }
+  .plan-usage-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .plan-usage-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+  .plan-usage-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .plan-usage-bar-track {
+    height: 5px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .plan-usage-bar-fill {
+    height: 100%;
+    background: #0d7377;
+    border-radius: 3px;
+    transition: width 0.2s;
+  }
+  .plan-usage-bar-fill--warn { background: #d97706; }
+  .plan-upgrade-link {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0d7377;
+    text-decoration: none;
+  }
+  .plan-upgrade-link:hover { text-decoration: underline; }
 `
+// Returns full plan + usage info for the Settings page
+export async function getPlanStatus(orgId, userId) {
+  const { data: sub } = await supabase
+    .from('org_subscriptions')
+    .select('plan_id, status, plans(name, price_monthly, max_employees, max_invoices, max_orgs)')
+    .eq('org_id', orgId)
+    .single()
+
+  const plan = sub?.plans || null
+  
+  const invoicesUsed = await countInvoicesThisMonth(orgId)
+
+  const { count: employeesUsed } = await supabase
+    .from('employees')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+
+  let orgsOwned = 0
+  if (userId) {
+    const { count } = await supabase
+      .from('organizations')
+      .select('id', { count: 'exact', head: true })
+      .eq('owner_id', userId)
+    orgsOwned = count || 0
+  }
+
+  return {
+    planName: plan?.name || null,
+    priceMonthly: plan?.price_monthly ?? null,
+    maxInvoices: plan?.max_invoices ?? null,
+    maxEmployees: plan?.max_employees ?? null,
+    maxOrgs: plan?.max_orgs ?? null,
+    invoicesUsed,
+    employeesUsed: employeesUsed || 0,
+    orgsOwned,
+  }
+}
+
+function UsageStat({ label, used, max }) {
+  const unlimited = max === -1 || max == null
+  const pct = unlimited ? 0 : Math.min(100, (used / max) * 100)
+  const warn = !unlimited && used >= max
+  return (
+    <div className="plan-usage-item">
+      <div className="plan-usage-label">{label}</div>
+      <div className="plan-usage-value">
+        {used} {unlimited ? '' : `/ ${max}`}
+        {unlimited && <span style={{ fontWeight: 400, color: '#94a3b8', fontSize: 12 }}> (unlimited)</span>}
+      </div>
+      {!unlimited && (
+        <div className="plan-usage-bar-track">
+          <div
+            className={`plan-usage-bar-fill${warn ? ' plan-usage-bar-fill--warn' : ''}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Settings() {
   const { activeOrg, refreshSettings, orgs, refresh } = useOrg()
@@ -311,6 +441,8 @@ export default function Settings() {
   const [showConfirm,  setShowConfirm]  = useState(false)
   const [confirmText,  setConfirmText]  = useState('')
   const [deleting,     setDeleting]     = useState(false)
+
+  const [planStatus, setPlanStatus] = useState(null)
 
   const isOwner = activeOrg?.role === 'owner'
 
@@ -340,6 +472,16 @@ export default function Settings() {
     }
     setLoading(false)
   }
+
+    useEffect(() => {
+    if (!activeOrg?.orgId) return
+    async function loadPlan() {
+      const { data: userData } = await supabase.auth.getUser()
+      const status = await getPlanStatus(activeOrg.orgId, userData?.user?.id)
+      setPlanStatus(status)
+    }
+    loadPlan()
+  }, [activeOrg?.orgId])
 
   async function handleSave() {
     if (!activeOrg?.orgId) return
@@ -425,6 +567,39 @@ export default function Settings() {
 
         {activeOrg && (
           <div className="settings-org-badge">🏢 {activeOrg.name}</div>
+        )}
+
+        {planStatus && (
+          <div className="settings-card">
+            <div className="plan-card-header">
+              <span className="plan-name-badge">{planStatus.planName || 'Unknown'}</span>
+              <span className="plan-price">
+                {planStatus.priceMonthly === 0 ? 'Free' : planStatus.priceMonthly != null ? `$${planStatus.priceMonthly}/mo` : ''}
+              </span>
+            </div>
+            <div className="plan-usage-grid">
+              <UsageStat
+                label="Invoices this month"
+                used={planStatus.invoicesUsed}
+                max={planStatus.maxInvoices}
+              />
+              <UsageStat
+                label="Employees"
+                used={planStatus.employeesUsed}
+                max={planStatus.maxEmployees}
+              />
+              <UsageStat
+                label="Organizations"
+                used={planStatus.orgsOwned}
+                max={planStatus.maxOrgs}
+              />
+            </div>
+            {planStatus.planName !== 'enterprise' && (
+              <a href="mailto:info@klair.ca?subject=Upgrade%20my%20plan" className="plan-upgrade-link">
+                Upgrade your plan →
+              </a>
+            )}
+          </div>
         )}
 
         {/* ── Logo ── */}
