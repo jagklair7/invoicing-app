@@ -1,5 +1,5 @@
 // src/pages/Onboarding.jsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
@@ -21,7 +21,7 @@ const css = `
   border: 1px solid #e2e8f0;
   padding: 48px 40px;
   width: 100%;
-  max-width: 480px;
+  max-width: 560px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.06);
 }
 
@@ -85,6 +85,72 @@ const css = `
   background: #fff;
 }
 
+.onboarding-plans-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.onboarding-plans-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.onboarding-plan-card {
+  padding: 14px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.onboarding-plan-card:hover {
+  border-color: #b2e0e2;
+}
+
+.onboarding-plan-card--selected {
+  background: #0d7377;
+  border-color: #0d7377;
+}
+
+.onboarding-plan-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.onboarding-plan-card--selected .onboarding-plan-name { color: #fff; }
+
+.onboarding-plan-price {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 10px;
+}
+
+.onboarding-plan-card--selected .onboarding-plan-price { color: rgba(255,255,255,0.85); }
+
+.onboarding-plan-feature {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 3px;
+}
+
+.onboarding-plan-card--selected .onboarding-plan-feature { color: rgba(255,255,255,0.75); }
+
+.onboarding-plans-loading {
+  font-size: 13px;
+  color: #94a3b8;
+  padding: 12px 0;
+  margin-bottom: 16px;
+}
+
 .onboarding-btn {
   width: 100%;
   padding: 12px;
@@ -139,45 +205,65 @@ const css = `
 
 export default function Onboarding() {
   const [orgName,  setOrgName]  = useState('')
+  const [plans, setPlans] = useState([])
+  const [selectedPlanId, setSelectedPlanId] = useState(null)
+  const [loadingPlans, setLoadingPlans] = useState(true)
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState('')
   const { refresh } = useOrg()
   const navigate    = useNavigate()
 
+  useEffect(() => {
+    const fetchPlans = async () => {
+      const { data, error: plansErr } = await supabase
+        .from('plans')
+        .select('*')
+        .order('price_monthly', { ascending: true })
+      if (!plansErr && data) {
+        setPlans(data)
+        const free = data.find(p => p.name === 'free')
+        setSelectedPlanId(free?.id || data[0]?.id || null)
+      }
+      setLoadingPlans(false)
+    }
+    fetchPlans()
+  }, [])
+
   async function handleCreate() {
     const name = orgName.trim()
     if (!name) return setError('Please enter an organization name.')
+    if (!selectedPlanId) return setError('Please select a plan.')
     setSaving(true)
     setError('')
 
     try {
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData?.user?.id
-  if (!userId) throw new Error('Not authenticated.')
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData?.user?.id
+      if (!userId) throw new Error('Not authenticated.')
 
-  const { data, error: fnErr } = await supabase
-    .rpc('create_organization', { org_name: orgName.trim() })
-console.log('rpc data:', data)
-console.log('rpc error:', fnErr)
-  if (fnErr) throw fnErr
+      const { data, error: fnErr } = await supabase
+        .rpc('create_organization', { org_name: name, plan_id: selectedPlanId })
+      if (fnErr) throw fnErr
 
-  const org = typeof data === 'string' ? JSON.parse(data) : data
-console.log('parsed org:', org)
-  localStorage.setItem('activeOrgId', org.id)
-  await refresh()
-  navigate('/', { replace: true })
+      const org = typeof data === 'string' ? JSON.parse(data) : data
+      localStorage.setItem('activeOrgId', org.id)
+      await refresh()
+      navigate('/', { replace: true })
 
-} catch (err) {
-  setError(err.message || 'Something went wrong.')
-} finally {
-  setSaving(false)
-}
+    } catch (err) {
+      setError(err.message || 'Something went wrong.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function handleSignOut() {
     await supabase.auth.signOut()
     navigate('/login', { replace: true })
   }
+
+  const fmtPrice = (n) => n === 0 ? 'Free' : `$${n}/mo`
+  const fmtLimit = (n, label) => n === -1 ? `Unlimited ${label}` : `${n} ${label}`
 
   return (
     <>
@@ -206,10 +292,34 @@ console.log('parsed org:', org)
             />
           </div>
 
+          <div className="onboarding-plans-label">Choose a plan</div>
+
+          {loadingPlans ? (
+            <div className="onboarding-plans-loading">Loading plans…</div>
+          ) : (
+            <div className="onboarding-plans-grid">
+              {plans.map(p => (
+                <div
+                  key={p.id}
+                  className={`onboarding-plan-card${selectedPlanId === p.id ? ' onboarding-plan-card--selected' : ''}`}
+                  onClick={() => setSelectedPlanId(p.id)}
+                >
+                  <div className="onboarding-plan-name">
+                    {p.name.charAt(0).toUpperCase() + p.name.slice(1)}
+                  </div>
+                  <div className="onboarding-plan-price">{fmtPrice(p.price_monthly)}</div>
+                  <div className="onboarding-plan-feature">{fmtLimit(p.max_employees, 'employees')}</div>
+                  <div className="onboarding-plan-feature">{fmtLimit(p.max_invoices, 'invoices')}</div>
+                  <div className="onboarding-plan-feature">{fmtLimit(p.max_orgs, 'orgs')}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             className="onboarding-btn"
             onClick={handleCreate}
-            disabled={saving || !orgName.trim()}
+            disabled={saving || !orgName.trim() || !selectedPlanId}
           >
             {saving ? 'Creating…' : 'Create Organization →'}
           </button>
