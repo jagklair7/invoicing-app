@@ -1125,6 +1125,7 @@ export default function InvoiceView() {
           .insert(items.map(i => ({
             invoice_id:     newInv.id,
             org_id:         activeOrg.orgId,
+            product_id:     i.product_id || null,
             name:           i.name,
             quantity:       i.quantity,
             unit_price:     i.unit_price,
@@ -1141,7 +1142,6 @@ export default function InvoiceView() {
       setDuplicating(false)
     }
   }
-
   // ── Delete ─────────────────────────────────────────────────────────────────
   async function deleteInvoice() {
     if (!window.confirm('Delete this invoice? This cannot be undone.')) return
