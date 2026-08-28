@@ -254,7 +254,7 @@ export async function exportReceiptPDF(payment, invoice, customer, orgId) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
   setColor(doc, grandColor)
-  doc.text(fullyPaid ? '✓ ' : fmt(balanceDue), valueX, y + 2.5, { align: 'right' })
+  doc.text(fullyPaid ? ' ' : fmt(balanceDue), valueX, y + 2.5, { align: 'right' })
   y += 14
 
   // ── Footer ───────────────────────────────────────────────────────────────
