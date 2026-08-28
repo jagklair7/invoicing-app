@@ -129,3 +129,147 @@ export async function exportReceiptPDF(payment, invoice, customer, orgId) {
   y = headerH + 10
 
   // ── From / Received From ────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  setColor(doc, C.teal)
+  doc.text('FROM', ml, y)
+
+  y += 5
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  setColor(doc, C.text)
+  doc.text(COMPANY.name, ml, y)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  setColor(doc, C.muted)
+  y += 4.5; doc.text(COMPANY.address, ml, y)
+  y += 4;   doc.text(COMPANY.city,    ml, y)
+  y += 4;   doc.text(COMPANY.phone,   ml, y)
+  if (COMPANY.gst) {
+    y += 4
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.5)
+    setColor(doc, C.text)
+    doc.text(`GST #: ${COMPANY.gst}`, ml, y)
+  }
+
+  let ry = headerH + 10
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  setColor(doc, C.teal)
+  doc.text('RECEIVED FROM', (ml + cw * 0.42), ry)
+
+  ry += 5
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  setColor(doc, C.text)
+  doc.text(customer?.name || '—', (ml + cw * 0.42), ry)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  setColor(doc, C.muted)
+  if (customer?.email) { ry += 4.5; doc.text(customer.email, (ml + cw * 0.42), ry) }
+  if (customer?.phone) { ry += 4;   doc.text(customer.phone, (ml + cw * 0.42), ry) }
+
+  const col3x = pw - mr
+  let dy = headerH + 10
+  const dateRows = [
+    ['Payment Date', fmtDate(payment.payment_date)],
+    ['Method',       METHOD_LABELS[payment.method] || payment.method || '—'],
+  ]
+  dateRows.forEach(([label, value]) => {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    setColor(doc, C.light)
+    doc.text(label, col3x, dy, { align: 'right' })
+    dy += 4.5
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    setColor(doc, C.text)
+    doc.text(value, col3x, dy, { align: 'right' })
+    dy += 7
+  })
+
+  y = Math.max(y, ry, dy) + 8
+
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.3)
+  doc.line(ml, y, pw - mr, y)
+  y += 10
+
+  // ── Amount received block ───────────────────────────────────────────────
+  setColor(doc, C.tealLight, 'fill')
+  doc.rect(ml, y, cw, 18, 'F')
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  setColor(doc, C.muted)
+  doc.text('AMOUNT RECEIVED', ml + 4, y + 7)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  setColor(doc, C.green)
+  doc.text(fmt(payment.amount), pw - mr - 4, y + 12, { align: 'right' })
+
+  y += 26
+
+  if (payment.note) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8.5)
+    setColor(doc, C.light)
+    const noteLines = doc.splitTextToSize(`Note: "${payment.note}"`, cw)
+    doc.text(noteLines, ml, y)
+    y += noteLines.length * 4 + 4
+  }
+
+  // ── Invoice totals recap ────────────────────────────────────────────────
+  const labelX = pw - mr - 70
+  const valueX = pw - mr
+
+  const recapRows = [
+    ['Invoice Total', fmt(invoice.total), false, false],
+    ['Total Paid to Date', fmt(totalPaid), false, true],
+  ]
+
+  recapRows.forEach(([label, value, , isPaidGreen]) => {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    setColor(doc, C.muted)
+    doc.text(label, labelX, y)
+    setColor(doc, isPaidGreen ? C.green : C.text)
+    doc.text(value, valueX, y, { align: 'right' })
+    y += 6
+  })
+
+  y += 2
+  const fullyPaid = balanceDue <= 0.005
+  setColor(doc, C.tealLight, 'fill')
+  doc.rect(labelX - 4, y - 4, 70 + 4, 10, 'F')
+  const grandColor = fullyPaid ? C.green : C.teal
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  setColor(doc, grandColor)
+  doc.text(fullyPaid ? 'Paid in Full' : 'Balance Due', labelX, y + 2)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  setColor(doc, grandColor)
+  doc.text(fullyPaid ? '✓ Paid in Full' : fmt(balanceDue), valueX, y + 2.5, { align: 'right' })
+  y += 14
+
+  // ── Footer ───────────────────────────────────────────────────────────────
+  const footerY = ph - 16
+  doc.setDrawColor(...C.border)
+  doc.setLineWidth(0.2)
+  doc.line(ml, footerY, pw - mr, footerY)
+
+  doc.setFont('helvetica', 'italic')
+  doc.setFontSize(8)
+  setColor(doc, C.light)
+  doc.text('Thank you for your payment.', pw / 2, footerY + 5, { align: 'center' })
+  doc.text(COMPANY.name + '  ·  ' + COMPANY.phone, pw / 2, footerY + 9.5, { align: 'center' })
+
+  const filename = `receipt-${invoice.number || 'invoice'}-${fmtDate(payment.payment_date)}.pdf`
+  const pdfBase64 = doc.output('datauristring')
+  return { pdfBase64, filename }
+}
