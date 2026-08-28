@@ -48,6 +48,9 @@ export default function CreateOrganization() {
       const userId = userData?.user?.id;
       if (!userId) { navigate('/login'); return; }
 
+      const { allowed, reason } = await checkCanCreateOrg(userId)
+      if (!allowed) return setError(reason)
+
       const { data, error: fnErr } = await supabase
         .rpc('create_organization', { org_name: name.trim(), plan_id: selectedPlanId });
       if (fnErr) throw new Error(fnErr.message);

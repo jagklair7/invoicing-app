@@ -1083,6 +1083,11 @@ export default function InvoiceView() {
 
   // ── Duplicate ──────────────────────────────────────────────────────────────
   async function duplicateInvoice() {
+    const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
+  if (!allowed) {
+    alert(reason)
+    return
+  }
     if (!activeOrg?.orgId) return
     setDuplicating(true)
     try {

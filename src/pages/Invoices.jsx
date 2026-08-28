@@ -830,6 +830,11 @@ export default function Invoices() {
   }
 
   async function duplicateInvoice(inv) {
+    const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
+  if (!allowed) {
+    alert(reason)
+    return
+  }
     const { data: last } = await supabase
       .from('invoices').select('number').eq('org_id', activeOrg.orgId)
       .order('created_at', { ascending: false }).limit(1)

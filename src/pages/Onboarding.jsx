@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import { checkCanCreateOrg } from '../utils/planLimits'
 
 const css = `
 .onboarding-wrap {
@@ -229,6 +230,7 @@ export default function Onboarding() {
     fetchPlans()
   }, [])
 
+  
   async function handleCreate() {
     const name = orgName.trim()
     if (!name) return setError('Please enter an organization name.')
@@ -240,6 +242,9 @@ export default function Onboarding() {
       const { data: userData } = await supabase.auth.getUser()
       const userId = userData?.user?.id
       if (!userId) throw new Error('Not authenticated.')
+
+      const { allowed, reason } = await checkCanCreateOrg(userId)
+      if (!allowed) return setError(reason)
 
       const { data, error: fnErr } = await supabase
         .rpc('create_organization', { org_name: name, plan_id: selectedPlanId })

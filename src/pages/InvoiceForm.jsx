@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import { checkCanCreateInvoice } from '../utils/planLimits'
 
 export default function InvoiceForm() {
   const navigate = useNavigate()
@@ -112,6 +113,12 @@ function handleProductSelect(idx, productId) {
     e.preventDefault()
     if (!invoice.customer_id) return alert('Select a customer')
     if (!activeOrg?.orgId)    return alert('No active organization')
+    const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
+    if (!allowed) {
+      alert(reason)
+      return
+    }
+
     setSaving(true)
 
     try {
