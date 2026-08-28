@@ -390,6 +390,9 @@ export default function AdminPanel() {
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [planChangeSaving, setPlanChangeSaving] = useState(null) // org_id being changed
 
+  const [suspendSaving, setSuspendSaving] = useState(null)
+  const [deletingOrgId, setDeletingOrgId] = useState(null)
+
   useEffect(() => {
     if (!isSuperAdmin) { navigate('/'); return }
     fetchFlags()
@@ -693,6 +696,65 @@ export default function AdminPanel() {
                   {planChangeSaving === org.id && <span className="admin-saving">Saving…</span>}
                 </div>
               ))}
+
+                              <div key={org.id} className="admin-user-row">
+                  <div className="admin-user-info">
+                    <div className="admin-user-org-name">{org.name}</div>
+                    <div className="admin-user-email">
+                      {org.owner?.email || org.owner?.full_name || '— no owner profile —'}
+                    </div>
+                    <div className="admin-user-date">
+                      Joined {new Date(org.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </div>
+                  </div>
+
+                  {org.subscription ? (
+                    <span className={`admin-status-pill${org.subscription.status === 'suspended' ? ' admin-status-pill--none' : ''}`}>
+                      {org.subscription.status}
+                    </span>
+                  ) : (
+                    <span className="admin-status-pill admin-status-pill--none">No plan</span>
+                  )}
+
+                  <select
+                    className="admin-plan-select"
+                    value={org.subscription?.plan_id || ''}
+                    onChange={e => changeOrgPlan(org.id, e.target.value)}
+                    disabled={planChangeSaving === org.id}
+                  >
+                    <option value="" disabled>Select plan…</option>
+                    {plans.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name.charAt(0).toUpperCase() + p.name.slice(1)} — ${p.price_monthly}/mo
+                      </option>
+                    ))}
+                  </select>
+
+                  {planChangeSaving === org.id && <span className="admin-saving">Saving…</span>}
+
+                  <button
+                    className="admin-button"
+                    onClick={() => toggleSuspend(org)}
+                    disabled={suspendSaving === org.id || !org.subscription}
+                    title={!org.subscription ? 'Assign a plan first' : ''}
+                  >
+                    {suspendSaving === org.id
+                      ? 'Saving…'
+                      : org.subscription?.status === 'suspended'
+                        ? 'Reactivate'
+                        : 'Suspend'}
+                  </button>
+
+                  <button
+                    className="admin-button"
+                    style={{ color: '#ef4444', borderColor: '#fecaca' }}
+                    onClick={() => handleAdminDeleteOrg(org)}
+                    disabled={deletingOrgId === org.id}
+                  >
+                    {deletingOrgId === org.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+
             </div>
           </>
         )}
