@@ -990,7 +990,7 @@ export default function InvoiceView() {
 
   function handleProductSelect(idx, productId) {
   const product = products.find(p => p.id === productId)
-  setItems(prev => prev.map((it, i) => {   // in InvoiceView.jsx this is setEditItems
+  setEditItems(prev => prev.map((it, i) => {   // in InvoiceView.jsx this is setEditItems
     if (i !== idx) return it
     return {
       ...it,
