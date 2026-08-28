@@ -8,12 +8,15 @@
  *   invoiceId    — invoice UUID
  *   invoiceTotal — total amount due (for balance calculation)
  *   orgId        — active org ID
+ *   invoice      — full invoice object (needed for receipt PDF: number, total, id)
+ *   customer     — full customer object (needed for receipt PDF: name, email, phone)
  *   onPaymentAdded(payment) — called after a payment is saved
  *   onPaymentDeleted(paymentId) — called after a payment is removed
  */
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../app/supabaseClient'
+import { sendReceipt } from '../utils/sendReceipt'
 
 const fmt = (n) =>
   new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
@@ -159,6 +162,9 @@ const css = `
   .pay-item-meta {
     font-size: 11px;
     color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .pay-item-notes {
@@ -167,6 +173,45 @@ const css = `
     margin-top: 4px;
     font-style: italic;
     line-height: 1.5;
+  }
+
+  .pay-item-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .pay-item-receipt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    background: transparent;
+    border: 1px solid #b2e0e2;
+    color: #0d7377;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .pay-item-receipt-btn:hover { background: #e8f5f5; }
+  .pay-item-receipt-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .pay-item-receipt-sent {
+    font-size: 11px;
+    color: #059669;
+  }
+
+  .pay-item-receipt-error {
+    font-size: 11px;
+    color: #dc2626;
   }
 
   /* Balance row */
@@ -294,12 +339,14 @@ const css = `
   }
 `
 
-export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaymentAdded, onPaymentDeleted }) {
+export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoice, customer, onPaymentAdded, onPaymentDeleted }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [sendingReceiptId, setSendingReceiptId] = useState(null)
+  const [receiptErrors, setReceiptErrors] = useState({})
 
   const [formAmount, setFormAmount]   = useState('')
   const [formMethod, setFormMethod]   = useState('card')
@@ -410,6 +457,25 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
     }
   }
 
+  async function handleSendReceipt(payment) {
+    if (!invoice || !customer) {
+      setReceiptErrors(prev => ({ ...prev, [payment.id]: 'Missing invoice/customer data' }))
+      return
+    }
+    setSendingReceiptId(payment.id)
+    setReceiptErrors(prev => ({ ...prev, [payment.id]: null }))
+    try {
+      await sendReceipt(payment, invoice, customer, orgId)
+      setPayments(prev =>
+        prev.map(p => p.id === payment.id ? { ...p, receipt_sent_at: new Date().toISOString() } : p)
+      )
+    } catch (err) {
+      setReceiptErrors(prev => ({ ...prev, [payment.id]: err.message }))
+    } finally {
+      setSendingReceiptId(null)
+    }
+  }
+
   const totalPaid    = payments.reduce((s, p) => s + Number(p.amount), 0)
   const balanceDue   = Number(invoiceTotal) - totalPaid
   const fullySatisfied = balanceDue <= 0
@@ -455,6 +521,27 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
                   </div>
                   <div className="pay-item-meta">{fmtDateTime(p.payment_date)}</div>
                   {p.note && <div className="pay-item-notes">"{p.note}"</div>}
+                  <div className="pay-item-bottom">
+                    <button
+                      className="pay-item-receipt-btn"
+                      onClick={() => handleSendReceipt(p)}
+                      disabled={sendingReceiptId === p.id}
+                    >
+                      {sendingReceiptId === p.id
+                        ? 'Sending…'
+                        : p.receipt_sent_at
+                          ? 'Resend Receipt'
+                          : 'Send Receipt'}
+                    </button>
+                    {p.receipt_sent_at && !receiptErrors[p.id] && (
+                      <span className="pay-item-receipt-sent">
+                        Sent {fmtDateTime(p.receipt_sent_at)}
+                      </span>
+                    )}
+                    {receiptErrors[p.id] && (
+                      <span className="pay-item-receipt-error">{receiptErrors[p.id]}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
