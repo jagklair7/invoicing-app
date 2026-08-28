@@ -299,6 +299,63 @@ const css = `
   color: #0d7377;
   margin-left: 8px;
 }
+  .admin-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.admin-user-row:last-child { border-bottom: none; }
+
+.admin-user-info { flex: 1; min-width: 200px; }
+
+.admin-user-org-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-user-email {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.admin-user-date {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.admin-plan-select {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  outline: none;
+  cursor: pointer;
+  min-width: 160px;
+}
+.admin-plan-select:focus { border-color: #0d7377; }
+
+.admin-status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: #f1f5f9;
+  color: #64748b;
+  white-space: nowrap;
+}
+.admin-status-pill--none { background: #fef2f2; color: #ef4444; }
 `
 
 const PLAN_FEATURES = [
@@ -327,6 +384,11 @@ export default function AdminPanel() {
   const [orgs, setOrgs]           = useState([])
   const [selectedOrg, setSelectedOrg] = useState('')
   const [overrides, setOverrides] = useState([]) // merged: flag + override
+
+    // Users & plans (all orgs with owner + subscription)
+  const [orgAccounts, setOrgAccounts] = useState([])
+  const [accountsLoading, setAccountsLoading] = useState(true)
+  const [planChangeSaving, setPlanChangeSaving] = useState(null) // org_id being changed
 
   useEffect(() => {
     if (!isSuperAdmin) { navigate('/'); return }
@@ -370,6 +432,69 @@ export default function AdminPanel() {
       .select('*')
       .order('price_monthly', { ascending: true })
     setPlans(data || [])
+  }
+
+    async function fetchOrgAccounts() {
+    setAccountsLoading(true)
+    const { data: allOrgs } = await supabase
+      .from('organizations')
+      .select('id, name, owner_id, created_at')
+      .order('created_at', { ascending: false })
+
+    const { data: allProfiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+
+    const { data: allSubs } = await supabase
+      .from('org_subscriptions')
+      .select('org_id, plan_id, status, plans(id, name, price_monthly)')
+
+    const profileMap = new Map((allProfiles || []).map(p => [p.id, p]))
+    const subMap = new Map((allSubs || []).map(s => [s.org_id, s]))
+
+    const merged = (allOrgs || []).map(org => ({
+      ...org,
+      owner: profileMap.get(org.owner_id) || null,
+      subscription: subMap.get(org.id) || null,
+    }))
+
+    setOrgAccounts(merged)
+    setAccountsLoading(false)
+  }
+
+    useEffect(() => {
+    if (!isSuperAdmin) { navigate('/'); return }
+    fetchFlags()
+    fetchPlans()
+    fetchOrgs()
+    fetchOrgAccounts()
+  }, [isSuperAdmin])
+
+    async function changeOrgPlan(orgId, newPlanId) {
+    setPlanChangeSaving(orgId)
+    try {
+      const { data: existing } = await supabase
+        .from('org_subscriptions')
+        .select('id')
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase
+          .from('org_subscriptions')
+          .update({ plan_id: newPlanId, status: 'active' })
+          .eq('org_id', orgId)
+      } else {
+        await supabase
+          .from('org_subscriptions')
+          .insert({ org_id: orgId, plan_id: newPlanId, status: 'active' })
+      }
+      await fetchOrgAccounts()
+    } catch (err) {
+      alert('Failed to change plan: ' + err.message)
+    } finally {
+      setPlanChangeSaving(null)
+    }
   }
 
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) || plans[0] || null
@@ -488,6 +613,12 @@ export default function AdminPanel() {
           >
             Per-Org Overrides
           </button>
+          <button
+            className={`admin-tab ${tab === 'users' ? 'admin-tab--active' : ''}`}
+            onClick={() => setTab('users')}
+          >
+            Users & Plans
+          </button>
         </div>
 
         {/* ── Global Flags ── */}
@@ -512,6 +643,54 @@ export default function AdminPanel() {
                     />
                     <span className="admin-toggle-slider" />
                   </label>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+                {/* ── Users & Plans ── */}
+        {tab === 'users' && (
+          <>
+            <div className="admin-section-title">All Signed-Up Organizations</div>
+            <div className="admin-card">
+              {accountsLoading && <div className="admin-empty">Loading…</div>}
+              {!accountsLoading && orgAccounts.length === 0 && (
+                <div className="admin-empty">No organizations found.</div>
+              )}
+              {!accountsLoading && orgAccounts.map(org => (
+                <div key={org.id} className="admin-user-row">
+                  <div className="admin-user-info">
+                    <div className="admin-user-org-name">{org.name}</div>
+                    <div className="admin-user-email">
+                      {org.owner?.email || org.owner?.full_name || '— no owner profile —'}
+                    </div>
+                    <div className="admin-user-date">
+                      Joined {new Date(org.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </div>
+                  </div>
+
+                  {org.subscription ? (
+                    <span className="admin-status-pill">{org.subscription.status}</span>
+                  ) : (
+                    <span className="admin-status-pill admin-status-pill--none">No plan</span>
+                  )}
+
+                  <select
+                    className="admin-plan-select"
+                    value={org.subscription?.plan_id || ''}
+                    onChange={e => changeOrgPlan(org.id, e.target.value)}
+                    disabled={planChangeSaving === org.id}
+                  >
+                    <option value="" disabled>Select plan…</option>
+                    {plans.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name.charAt(0).toUpperCase() + p.name.slice(1)} — ${p.price_monthly}/mo
+                      </option>
+                    ))}
+                  </select>
+
+                  {planChangeSaving === org.id && <span className="admin-saving">Saving…</span>}
                 </div>
               ))}
             </div>
