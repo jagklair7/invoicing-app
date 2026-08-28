@@ -16,7 +16,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../app/supabaseClient'
-import { sendReceipt } from '../utils/sendReceipt'
+//import { sendReceipt } from '../utils/sendReceipt'
+import { exportReceiptPDF } from '../utils/exportReceiptPDF'
 
 const fmt = (n) =>
   new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
@@ -457,7 +458,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
     }
   }
 
-  async function handleSendReceipt(payment) {
+    async function handleDownloadReceipt(payment) {
     if (!invoice || !customer) {
       setReceiptErrors(prev => ({ ...prev, [payment.id]: 'Missing invoice/customer data' }))
       return
@@ -465,10 +466,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
     setSendingReceiptId(payment.id)
     setReceiptErrors(prev => ({ ...prev, [payment.id]: null }))
     try {
-      await sendReceipt(payment, invoice, customer, orgId)
-      setPayments(prev =>
-        prev.map(p => p.id === payment.id ? { ...p, receipt_sent_at: new Date().toISOString() } : p)
-      )
+      await exportReceiptPDF(payment, invoice, customer, orgId)
     } catch (err) {
       setReceiptErrors(prev => ({ ...prev, [payment.id]: err.message }))
     } finally {
