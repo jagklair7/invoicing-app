@@ -628,7 +628,7 @@ const css = `
               <button
                 className="inv-btn inv-btn--primary"
                 onClick={savePayment}
-                disabled={saving || !formAmount}
+                disabled={saving || !formAmount || isSuspended}
               >
                 {saving ? 'Saving…' : '✓ Save Payment'}
               </button>
