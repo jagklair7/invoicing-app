@@ -9,6 +9,7 @@ export function OrgProvider({ children }) {
   const [activeOrg, setActiveOrg]       = useState(null)
   const [settings, setSettings]         = useState(null)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [isSuspended, setIsSuspended]   = useState(false)
   const [loading, setLoading]           = useState(true)
 
   // Tracks whether the initial org load has completed. After that, background
@@ -22,7 +23,7 @@ export function OrgProvider({ children }) {
 
     const { data: userData } = await supabase.auth.getUser()
     if (!userData?.user) {
-      setOrgs([]); setActiveOrg(null); setSettings(null)
+      setOrgs([]); setActiveOrg(null); setSettings(null); setIsSuspended(false)
       initializedRef.current = true
       setLoading(false); return
     }
@@ -51,7 +52,7 @@ export function OrgProvider({ children }) {
     setOrgs(allOrgs)
 
     if (!allOrgs.length) {
-      setActiveOrg(null); setSettings(null)
+      setActiveOrg(null); setSettings(null); setIsSuspended(false)
       initializedRef.current = true
       setLoading(false); return
     }
@@ -62,6 +63,7 @@ export function OrgProvider({ children }) {
     const selected   = saved || allOrgs[0]
     setActiveOrg(selected)
     await loadSettings(selected.orgId)
+    await loadSubscriptionStatus(selected.orgId)
     initializedRef.current = true
     setLoading(false)
   }, [])
@@ -76,10 +78,21 @@ export function OrgProvider({ children }) {
     setSettings(data || null)
   }
 
+  async function loadSubscriptionStatus(orgId) {
+    if (!orgId) { setIsSuspended(false); return }
+    const { data } = await supabase
+      .from('org_subscriptions')
+      .select('status')
+      .eq('org_id', orgId)
+      .maybeSingle()
+    setIsSuspended(data?.status === 'suspended')
+  }
+
   async function switchOrg(org) {
     setActiveOrg(org)
     localStorage.setItem('activeOrgId', org.orgId)
     await loadSettings(org.orgId)
+    await loadSubscriptionStatus(org.orgId)
   }
 
   useEffect(() => {
@@ -96,10 +109,12 @@ export function OrgProvider({ children }) {
       activeOrg,
       settings,
       isSuperAdmin,
+      isSuspended,
       loading,
       switchOrg,
       refresh: loadOrgs,
       refreshSettings: () => activeOrg && loadSettings(activeOrg.orgId),
+      refreshSubscriptionStatus: () => activeOrg && loadSubscriptionStatus(activeOrg.orgId),
     }}>
       {children}
     </OrgContext.Provider>

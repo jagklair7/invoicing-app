@@ -4,6 +4,7 @@ import { supabase } from '../app/supabaseClient'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
 import { exportInvoicePDF } from '../utils/exportInvoicePDF'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d) {
@@ -86,6 +87,8 @@ const css = `
   .act-item--danger { color: #dc2626; }
   .act-item--danger:hover { background: #fff5f5; }
   .act-item-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+  .act-item:disabled { opacity: 0.4; cursor: not-allowed; }
+  .act-item:disabled:hover { background: none; }
 
   /* Modal overlay */
   .inv-overlay {
@@ -218,7 +221,7 @@ const css = `
 `
 
 // ── Action Dropdown ───────────────────────────────────────────────────────────
-function ActionMenu({ inv, onAction }) {
+function ActionMenu({ inv, onAction, isSuspended }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const btnRef = useRef()
@@ -260,39 +263,39 @@ function ActionMenu({ inv, onAction }) {
             <button className="act-item" onClick={e => pick('view', e)}>
               <span className="act-item-icon">👁</span> View
             </button>
-            <button className="act-item" onClick={e => pick('edit', e)}>
+            <button className="act-item" onClick={e => pick('edit', e)} disabled={isSuspended}>
               <span className="act-item-icon">✏️</span> Edit
             </button>
-            <button className="act-item" onClick={e => pick('duplicate', e)}>
+            <button className="act-item" onClick={e => pick('duplicate', e)} disabled={isSuspended}>
               <span className="act-item-icon">⧉</span> Duplicate
             </button>
           </div>
           <div className="act-group">
-            <button className="act-item" onClick={e => pick('payment', e)}>
+            <button className="act-item" onClick={e => pick('payment', e)} disabled={isSuspended}>
               <span className="act-item-icon">💳</span> Record Payment
             </button>
-            <button className="act-item" onClick={e => pick('resend', e)}>
+            <button className="act-item" onClick={e => pick('resend', e)} disabled={isSuspended}>
               <span className="act-item-icon">✉️</span> Resend Invoice
             </button>
             {(inv.status === 'sent' || isOverdue) && (
-              <button className="act-item" onClick={e => pick('reminder', e)}>
+              <button className="act-item" onClick={e => pick('reminder', e)} disabled={isSuspended}>
                 <span className="act-item-icon">🔔</span> Send Reminder
                 {isOverdue && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#f97316', fontWeight: 600 }}>OVERDUE</span>}
               </button>
             )}
           </div>
           <div className="act-group">
-            <button className="act-item" onClick={e => pick('pdf', e)}>
+            <button className="act-item" onClick={e => pick('pdf', e)} disabled={isSuspended}>
               <span className="act-item-icon">↓</span> Export as PDF
             </button>
           </div>
           <div className="act-group">
             {inv.status !== 'void' && (
-              <button className="act-item act-item--danger" onClick={e => pick('void', e)}>
+              <button className="act-item act-item--danger" onClick={e => pick('void', e)} disabled={isSuspended}>
                 <span className="act-item-icon">⊘</span> Void Invoice
               </button>
             )}
-            <button className="act-item act-item--danger" onClick={e => pick('delete', e)}>
+            <button className="act-item act-item--danger" onClick={e => pick('delete', e)} disabled={isSuspended}>
               <span className="act-item-icon">🗑</span> Delete
             </button>
           </div>
@@ -504,7 +507,7 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
             </p>
             <p style="font-size:14px;color:#475569;margin:0;">
               Please arrange payment at your earliest convenience.
-              <a
+              
                           href="mailto:info@klair.ca"
                           style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
                         >
@@ -669,7 +672,7 @@ async function send() {
             ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
           </p>
           <p style="color:#475569;">Please get in touch if you have any questions.
-          <a
+          
                           href="mailto:info@klair.ca"
                           style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
                         >
@@ -754,7 +757,7 @@ export default function Invoices() {
   const [orgSettings, setOrgSettings] = useState(null)
   const navigate  = useNavigate()
   const location  = useLocation()
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
 
   useEffect(() => {
     if (activeOrg?.orgId) {
@@ -830,11 +833,6 @@ export default function Invoices() {
   }
 
   async function duplicateInvoice(inv) {
-    const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
-  if (!allowed) {
-    alert(reason)
-    return
-  }
     const { data: last } = await supabase
       .from('invoices').select('number').eq('org_id', activeOrg.orgId)
       .order('created_at', { ascending: false }).limit(1)
@@ -872,10 +870,16 @@ export default function Invoices() {
             <h1 className="text-2xl font-semibold">Invoices</h1>
             <p className="text-sm text-gray-500">Manage all your invoices</p>
           </div>
-          <button onClick={() => navigate('/invoices/new')} className="bg-black text-white px-4 py-2 rounded-xl">
+          <button
+            onClick={() => navigate('/invoices/new')}
+            disabled={isSuspended}
+            className="bg-black text-white px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             + New Invoice
           </button>
         </div>
+
+        <SuspendedBanner />
 
         {/* Filters */}
         <div className="flex gap-2 mb-4">
@@ -931,7 +935,7 @@ export default function Invoices() {
                       {fmt(inv.total || 0)}
                     </td>
                     <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
-                      <ActionMenu inv={inv} onAction={handleAction} />
+                      <ActionMenu inv={inv} onAction={handleAction} isSuspended={isSuspended} />
                     </td>
                   </tr>
                 )

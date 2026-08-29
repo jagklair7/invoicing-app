@@ -339,7 +339,8 @@ const css = `
   }
 `
 
-export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoice, customer, onPaymentAdded, onPaymentDeleted }) {
+// Update the function signature:
+  export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoice, customer, isSuspended, onPaymentAdded, onPaymentDeleted }) {
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -487,7 +488,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
         <div className="pay-section-header">
           <span className="pay-section-title">Payments Received</span>
           {!showForm && (
-            <button className="pay-add-btn" onClick={() => setShowForm(true)}>
+            <button className="pay-add-btn" onClick={() => setShowForm(true)} disabled={isSuspended}>
               + Record Payment
             </button>
           )}
@@ -511,7 +512,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
                       <button
                         className="pay-item-delete"
                         onClick={() => deletePayment(p)}
-                        disabled={deletingId === p.id}
+                        disabled={deletingId === p.id || isSuspended}
                         title="Remove this payment"
                         aria-label="Remove this payment"
                       >
@@ -525,9 +526,9 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
                     <button
                       className="pay-item-receipt-btn"
                       onClick={() => handleSendReceipt(p)}
-                      disabled={sendingReceiptId === p.id}
+                      disabled={sendingReceiptId === p.id || isSuspended}
                     >
-                      {sendingReceiptId === p.id
+                      {sendingReceiptId === p.id || isSuspended
                         ? 'Sending…'
                         : p.receipt_sent_at
                           ? 'Resend Receipt'
@@ -620,7 +621,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
               <button
                 className="inv-btn inv-btn--ghost"
                 onClick={() => { setShowForm(false); setFormAmount(''); setFormNotes('') }}
-                disabled={saving}
+                disabled={saving || isSuspended}
               >
                 Cancel
               </button>

@@ -3,9 +3,10 @@ import { supabase } from '../app/supabaseClient'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 export default function Customers() {
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const [customers, setCustomers] = useState([])
   const [editingId, setEditingId] = useState(null)
   const [formData, setFormData] = useState({
@@ -90,58 +91,62 @@ export default function Customers() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-10">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Company Name *</label>
-            <input name="name" required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.name} onChange={handleChange} placeholder="e.g. Digital Corp" />
+      <SuspendedBanner />
+
+      <fieldset disabled={isSuspended} style={{ border: 'none', padding: 0, margin: 0 }}>
+        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Company Name *</label>
+              <input name="name" required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.name} onChange={handleChange} placeholder="e.g. Digital Corp" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Contact Person</label>
+              <input name="contact_person" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.contact_person} onChange={handleChange} placeholder="e.g. Jane Smith" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Email Address</label>
+              <input name="email" type="email" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.email} onChange={handleChange} placeholder="billing@digitalcorp.com" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Phone Number</label>
+              <input name="phone" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.phone} onChange={handleChange} placeholder="+1 (555) 000-0000" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Street Address</label>
+              <input name="address" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.address} onChange={handleChange} placeholder="123 Business Way" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">City</label>
+              <input name="city" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.city} onChange={handleChange} placeholder="City" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Province</label>
+              <select name="province" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.province} onChange={handleChange}>
+                {PROVINCES.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Postal Code</label>
+              <input name="postal_code" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.postal_code} onChange={handleChange} placeholder="A1A 1A1" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Country</label>
+              <input name="country" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.country} onChange={handleChange} placeholder="Canada" />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Contact Person</label>
-            <input name="contact_person" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.contact_person} onChange={handleChange} placeholder="e.g. Jane Smith" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Email Address</label>
-            <input name="email" type="email" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.email} onChange={handleChange} placeholder="billing@digitalcorp.com" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Phone Number</label>
-            <input name="phone" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.phone} onChange={handleChange} placeholder="+1 (555) 000-0000" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Street Address</label>
-            <input name="address" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.address} onChange={handleChange} placeholder="123 Business Way" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">City</label>
-            <input name="city" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.city} onChange={handleChange} placeholder="City" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Province</label>
-            <select name="province" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.province} onChange={handleChange}>
-              {PROVINCES.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Postal Code</label>
-            <input name="postal_code" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.postal_code} onChange={handleChange} placeholder="A1A 1A1" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Country</label>
-            <input name="country" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.country} onChange={handleChange} placeholder="Canada" />
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button type="submit" className="bg-teal-700 text-white px-8 py-3 rounded-lg font-bold hover:bg-teal-600 transition-all">
-            {editingId ? 'Update Customer' : 'Add Customer'}
-          </button>
-          {editingId && (
-            <button type="button" onClick={cancelEdit} className="bg-gray-100 text-gray-600 px-8 py-3 rounded-lg font-bold hover:bg-gray-200 transition-all">
-              Cancel
+          <div className="flex gap-3">
+            <button type="submit" className="bg-teal-700 text-white px-8 py-3 rounded-lg font-bold hover:bg-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              {editingId ? 'Update Customer' : 'Add Customer'}
             </button>
-          )}
-        </div>
-      </form>
+            {editingId && (
+              <button type="button" onClick={cancelEdit} className="bg-gray-100 text-gray-600 px-8 py-3 rounded-lg font-bold hover:bg-gray-200 transition-all">
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      </fieldset>
 
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
         <table className="w-full text-left">
@@ -164,8 +169,8 @@ export default function Customers() {
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.email || '—'}</td>
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.phone || '—'}</td>
                 <td className="px-6 py-4 text-right space-x-4">
-                  <button onClick={() => startEdit(c)} className="text-blue-600 hover:underline font-medium text-sm">Edit</button>
-                  <button onClick={() => deleteCustomer(c.id)} className="text-red-500 hover:underline font-medium text-sm">Delete</button>
+                  <button onClick={() => startEdit(c)} disabled={isSuspended} className="text-blue-600 hover:underline font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
+                  <button onClick={() => deleteCustomer(c.id)} disabled={isSuspended} className="text-red-500 hover:underline font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">Delete</button>
                   <button onClick={() => navigate(`/customers/${c.id}/statement`)} className="text-teal-600 hover:underline font-medium text-sm">Statement</button>
                 </td>
               </tr>

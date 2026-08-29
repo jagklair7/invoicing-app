@@ -4,12 +4,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { checkCanCreateInvoice } from '../utils/planLimits'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 export default function InvoiceForm() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isNew = !id
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   
   const DRAFT_KEY = 'invoice_draft'
   const [customers, setCustomers] = useState([])
@@ -113,6 +114,7 @@ function handleProductSelect(idx, productId) {
     e.preventDefault()
     if (!invoice.customer_id) return alert('Select a customer')
     if (!activeOrg?.orgId)    return alert('No active organization')
+
     const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
     if (!allowed) {
       alert(reason)
@@ -169,6 +171,10 @@ function handleProductSelect(idx, productId) {
         <button type="button" onClick={() => navigate(-1)}
           className="text-sm text-gray-500 hover:text-gray-800">← Back</button>
       </div>
+
+      <SuspendedBanner />
+
+      <fieldset disabled={isSuspended} style={{ border: 'none', padding: 0, margin: 0 }}>
 
       {/* Invoice meta */}
       <div className="bg-white p-6 rounded-2xl border grid grid-cols-2 gap-4">
@@ -302,6 +308,8 @@ function handleProductSelect(idx, productId) {
         className="w-full bg-teal-700 text-white py-3 rounded-xl font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors">
         {saving ? 'Saving…' : 'Create Invoice'}
       </button>
+
+      </fieldset>
     </form>
   )
 }

@@ -10,6 +10,8 @@ import { calcLineTotal, calcLineDiscount } from '../utils/discount'
 import { useOrg } from '../context/OrgContext'
 import PayNowButton from '../components/PayNowButton'
 import PaymentsSection from '../components/PaymentsSection'
+// Add to imports:
+import SuspendedBanner from '../components/SuspendedBanner'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
@@ -760,8 +762,8 @@ function StatusBadge({ status, edit, value, onChange }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function InvoiceView() {
-  const { activeOrg } = useOrg()
-
+//  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const { id } = useParams()
   const navigate = useNavigate()
 
@@ -1198,7 +1200,7 @@ export default function InvoiceView() {
 
   const hasAnyDiscount = editItems.some(i => i.discount_value > 0 && i.discount_type !== 'none')
 
-  console.log('DEBUG customer:', customer, 'invoice:', invoice)
+ // console.log('DEBUG customer:', customer, 'invoice:', invoice)
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1211,22 +1213,24 @@ export default function InvoiceView() {
           <button className="inv-back" onClick={() => navigate('/invoices')}>
             ← Back to Invoices
           </button>
+
           <div className="inv-topbar-actions">
             {isEditing ? (
               <>
-                <button className="inv-btn inv-btn--primary" onClick={saveChanges} disabled={saving}>
+                <button className="inv-btn inv-btn--primary" onClick={saveChanges} disabled={saving || isSuspended}>
                   {saving ? 'Saving…' : 'Save Changes'}
                 </button>
-                <button className="inv-btn inv-btn--danger" onClick={deleteInvoice}>Delete</button>
+                <button className="inv-btn inv-btn--danger" onClick={deleteInvoice} disabled={isSuspended}>Delete</button>
                 <button className="inv-btn inv-btn--ghost" onClick={cancelEdit}>Cancel</button>
               </>
             ) : (
               <>
-                <button className="inv-btn" onClick={handleExportPDF} disabled={exporting}>
+                <button className="inv-btn" onClick={handleExportPDF} disabled={exporting || isSuspended}>
                   {exporting ? 'Generating…' : '↓ Export PDF'}
                 </button>
                 <button
                   className="inv-btn"
+                  disabled={isSuspended}
                   onClick={() => {
                     setSendEmail(customer?.email || '')
                     setSendNote('')
@@ -1236,7 +1240,7 @@ export default function InvoiceView() {
                 >
                   ✉ Send
                 </button>
-                <button className="inv-btn" onClick={duplicateInvoice} disabled={duplicating}>
+                <button className="inv-btn" onClick={duplicateInvoice} disabled={duplicating || isSuspended}>
                   {duplicating ? 'Duplicating…' : '⧉ Duplicate'}
                 </button>
                 {invoice?.status !== 'paid' && invoice?.status !== 'void' && (
@@ -1244,16 +1248,21 @@ export default function InvoiceView() {
                     className="inv-btn"
                     style={{ borderColor: '#b2e0e2', color: '#0d7377' }}
                     onClick={() => setShowPayModal(true)}
+                    disabled={isSuspended}
                   >
                     💳 Charge card
                   </button>
                 )}
-                <button className="inv-btn inv-btn--primary" onClick={() => setIsEditing(true)}>
+                <button className="inv-btn inv-btn--primary" onClick={() => setIsEditing(true)} disabled={isSuspended}>
                   Edit Invoice
                 </button>
               </>
             )}
           </div>
+        </div>
+        
+        <div style={{ maxWidth: 860, margin: '0 auto' }}>
+          <SuspendedBanner />
         </div>
 
         {/* Card */}
@@ -1460,6 +1469,7 @@ export default function InvoiceView() {
                         orgId={activeOrg.orgId}
                         invoice={invoice}
                         customer={customer}
+                        isSuspended={isSuspended}
                         onPaymentAdded={() => fetchInvoice()}
                       />
               </>
