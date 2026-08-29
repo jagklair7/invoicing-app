@@ -4,6 +4,7 @@ import { supabase } from '../app/supabaseClient'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
 import { exportEstimatePDF } from '../utils/exportEstimatePDF'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d) {
@@ -336,7 +337,7 @@ function ConvertModal({ est, activeOrg, onClose, onDone, navigate }) {
 
       // Create invoice
       const { data: newInv, error: invErr } = await supabase.from('invoices').insert({
-        org_id:      activeOrg.orgId,
+        org_id:      activeOrg.orgId, isSuspended: activeOrg.isSuspended,
         customer_id: est.customer_id,
         number:      newNumber,
         date:        new Date().toISOString().split('T')[0],
@@ -356,7 +357,7 @@ function ConvertModal({ est, activeOrg, onClose, onDone, navigate }) {
         await supabase.from('invoice_items').insert(
           lineItems.map(i => ({
             invoice_id:     newInv.id,
-            org_id:         activeOrg.orgId,
+            org_id:         activeOrg.orgId, isSuspended: activeOrg.isSuspended,
             name:           i.name,
             quantity:       i.quantity,
             unit_price:     i.unit_price,
@@ -422,7 +423,7 @@ export default function Estimates() {
   const [orgSettings, setOrgSettings] = useState(null)
   const navigate  = useNavigate()
   const location  = useLocation()
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
 
   useEffect(() => {
     if (activeOrg?.orgId) {
@@ -510,7 +511,7 @@ export default function Estimates() {
         {/* Filters */}
         <div className="flex gap-2 mb-4">
           {['all', 'draft', 'sent', 'approved', 'declined', 'converted'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
+            <button key={f} onClick={() => setFilter(f)} disabled={isSuspended}
               className={`px-3 py-1 rounded-full text-sm border capitalize ${
                 filter === f ? 'bg-black text-white border-black' : 'bg-white border-gray-200'
               }`}>
