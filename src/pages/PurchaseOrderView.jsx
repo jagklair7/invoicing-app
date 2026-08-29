@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -166,6 +167,7 @@ const css = `
     transition: all .15s; width: 100%; justify-content: center; font-family: 'DM Sans', sans-serif;
   }
   .po-add-item:hover { background: #d0eeef; border-color: var(--teal); }
+  .po-add-item:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .po-totals {
     margin-top: 20px; padding-top: 20px; border-top: 1.5px solid var(--border);
@@ -218,7 +220,7 @@ function StatusBadge({ status, edit, value, onChange }) {
 }
 
 export default function PurchaseOrderView() {
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const { id } = useParams()
   const navigate = useNavigate()
 
@@ -433,18 +435,24 @@ export default function PurchaseOrderView() {
           <div className="po-topbar-actions">
             {isEditing ? (
               <>
-                <button className="po-btn po-btn--primary" onClick={saveChanges} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save Changes'}
+                <button className="po-btn po-btn--primary" onClick={saveChanges} disabled={saving || isSuspended}>
+                  {saving ? 'Saving…' : 'Save Changes' }
                 </button>
-                <button className="po-btn po-btn--danger" onClick={deletePO}>Delete</button>
-                <button className="po-btn po-btn--ghost" onClick={cancelEdit}>Cancel</button>
+                <button className="po-btn po-btn--danger" onClick={deletePO} disabled={isSuspended}>
+                  Delete
+                </button>
+                <button className="po-btn po-btn--ghost" onClick={cancelEdit} disabled={isSuspended}>
+                  Cancel
+                </button>
               </>
             ) : (
               <>
                 <button className="po-btn" onClick={handleExportPDF} disabled={exporting}>
                   {exporting ? 'Generating…' : '↓ Export PDF'}
                 </button>
-                <button className="po-btn po-btn--primary" onClick={() => setIsEditing(true)}>Edit Purchase Order</button>
+                <button className="po-btn po-btn--primary" onClick={() => setIsEditing(true)} disabled={isSuspended}>
+                  Edit Purchase Order
+                </button>
               </>
             )}
           </div>
@@ -650,12 +658,17 @@ export default function PurchaseOrderView() {
                         onChange={e => updateItem(idx, 'unit_price', e.target.value)}
                         style={{ background: 'white' }}
                       />
-                      <button className="po-item-del" onClick={() => removeItem(idx)} title="Remove">×</button>
+                      <button className="po-item-del" onClick={() => removeItem(idx)} title="Remove" >
+                        ×
+                      </button>
                     </div>
                   ))}
 
-                  <button className="po-add-item" onClick={addItem}>+ Add Line Item</button>
+                  <button className="po-add-item" onClick={addItem} disabled={isSuspended}>
+                    + Add Line Item
+                  </button>
                 </div>
+                <SuspendedBanner />
 
                 <div className="po-totals">
                   <div className="po-total-row">

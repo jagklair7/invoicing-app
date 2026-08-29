@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../app/supabaseClient'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const PAYMENT_METHODS = ['Cash', 'Cheque', 'EFT', 'Credit Card']
 
@@ -31,7 +32,7 @@ const DEFAULT_FORM = {
   notes: '',
 }
 
-export default function VendorInvoicesSection({ vendorId, orgId }) {
+export default function VendorInvoicesSection({ vendorId, orgId, isSuspended }) {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -156,12 +157,14 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
 
   return (
     <div className="bg-slate-50 border-t border-gray-200 px-6 py-5">
+   
       <div className="flex items-center justify-between mb-4">
         <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Vendor Invoices</span>
         {!showForm && (
           <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-1 rounded-lg bg-teal-50 border border-dashed border-teal-300 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100 transition"
+            onClick={() => setShowForm(true) }
+            className="inline-flex items-center gap-1 rounded-lg bg-teal-50 border border-dashed border-teal-300 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline"
+            disabled={isSuspended}
           >
             + Add Invoice
           </button>
@@ -332,14 +335,14 @@ export default function VendorInvoicesSection({ vendorId, orgId }) {
               type="button"
               onClick={cancelForm}
               disabled={saving}
-              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:no-underline"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 transition disabled:opacity-50"
+              className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:no-underline"
             >
               {saving ? 'Saving…' : editingId ? 'Update Invoice' : 'Save Invoice'}
             </button>

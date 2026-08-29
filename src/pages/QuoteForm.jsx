@@ -171,7 +171,7 @@ export default function QuoteForm() {
     setActiveTab(Math.max(0, idx - 1));
   }
 
-  async function handleSave(status = "draft") {
+    async function handleSave(status = "draft") {
     if (!form.quote_number.trim()) return alert("Quote number is required.");
     setSaving(true);
 
@@ -192,14 +192,21 @@ export default function QuoteForm() {
       status,
     };
 
-    if (isEdit) {
-      await supabase.from("quotes").update(payload).eq("id", id).eq("org_id", activeOrg.orgId);
-      navigate(`/quotes/${id}`);
-    } else {
-      const { data } = await supabase.from("quotes").insert(payload).select().single();
-      navigate(`/quotes/${data.id}`);
+    try {
+      if (isEdit) {
+        const { error } = await supabase.from("quotes").update(payload).eq("id", id).eq("org_id", activeOrg.orgId);
+        if (error) throw error;
+        navigate(`/quotes/${id}`);
+      } else {
+        const { data, error } = await supabase.from("quotes").insert(payload).select().single();
+        if (error) throw error;
+        navigate(`/quotes/${data.id}`);
+      }
+    } catch (err) {
+      alert('Failed to save quote: ' + err.message);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   const currentOpt = form.options[activeTab];

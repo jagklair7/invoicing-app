@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { exportEstimatePDF } from '../utils/exportEstimatePDF'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const fmt = (n) =>
   new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
@@ -327,7 +328,7 @@ function ConvertModal({ est, activeOrg, onClose, navigate }) {
 export default function EstimateView() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
 
   const [estimate, setEstimate]     = useState(null)
   const [customer, setCustomer]     = useState(null)
@@ -405,39 +406,41 @@ export default function EstimateView() {
           )}
         </div>
 
+           <SuspendedBanner />
+
         {/* Action buttons */}
         <div className="ev-actions">
-          <button className="ev-btn" onClick={() => navigate(`/estimates/${id}/edit`)}>
+          <button className="ev-btn" onClick={() => navigate(`/estimates/${id}/edit`)} disabled={isSuspended}>
             ✏️ Edit
           </button>
           {!['converted', 'declined'].includes(estimate.status) && (
-            <button className="ev-btn ev-btn--primary" onClick={() => setModal('send')}>
+            <button className="ev-btn ev-btn--primary" onClick={() => setModal('send')} disabled={isSuspended}>
               ✉️ Send Estimate
             </button>
           )}
           {['draft', 'sent'].includes(estimate.status) && (
             <button className="ev-btn ev-btn--success"
               onClick={() => updateStatus('approved')}
-              disabled={actionLoading === 'approved'}>
+              disabled={actionLoading === 'approved' || isSuspended}>
               ✅ {actionLoading === 'approved' ? 'Updating…' : 'Mark Approved'}
             </button>
           )}
           {estimate.status === 'approved' && (
-            <button className="ev-btn ev-btn--purple" onClick={() => setModal('convert')}>
+            <button className="ev-btn ev-btn--purple" onClick={() => setModal('convert')} disabled={isSuspended}>
               🔄 Convert to Invoice
             </button>
           )}
           {['draft', 'sent'].includes(estimate.status) && (
             <button className="ev-btn"
               onClick={() => updateStatus('declined')}
-              disabled={actionLoading === 'declined'}>
+              disabled={actionLoading === 'declined' || isSuspended}>
               ❌ {actionLoading === 'declined' ? 'Updating…' : 'Mark Declined'}
             </button>
           )}
-          <button className="ev-btn" onClick={handleExportPDF}>
+          <button className="ev-btn" onClick={handleExportPDF} disabled={isSuspended}>
             ↓ Export PDF
           </button>
-          <button className="ev-btn ev-btn--danger" onClick={handleDelete}>
+          <button className="ev-btn ev-btn--danger" onClick={handleDelete} disabled={isSuspended}>
             🗑 Delete
           </button>
         </div>

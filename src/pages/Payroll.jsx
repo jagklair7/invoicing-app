@@ -41,6 +41,7 @@ import jsPDF from 'jspdf'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { usePlan } from '../context/PlanContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 // ── 2026 CRA CONSTANTS ────────────────────────────────────────────────────────
 
@@ -391,6 +392,7 @@ const css = `
   .pr-btn--ghost { background: transparent; border-color: transparent; color: var(--slate-mid); }
   .pr-btn--ghost:hover { background: var(--border); color: var(--slate); }
   .pr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pr-btn: disabled:hover { background: none; }
 
   /* ── Gate ── */
   .pr-gate {
@@ -801,7 +803,7 @@ function generateYearEndSummaryPDF(year, runs, entries, empNameById, orgName) {
 const DEFAULT_FORM = { employee_id: '', period_start: '', period_end: '', pay_date: '', hours_worked: '', ei_exempt_override: null }
 
 export default function Payroll() {
-  const { activeOrg }  = useOrg()
+  const { activeOrg, isSuspended }  = useOrg()
   const { can }        = usePlan()
   const canPayroll     = can('payroll')
 
@@ -1238,6 +1240,7 @@ export default function Payroll() {
                 {saving ? 'Creating…' : '+ Create Payroll Run'}
               </button>
             </div>
+            <SuspendedBanner />
           </form>
         </div>
 
@@ -1254,7 +1257,7 @@ export default function Payroll() {
                 ))}
               </select>
               <button className="pr-btn" style={{ fontSize: 12, padding: '7px 14px' }}
-                onClick={() => printYearEndSummary(summaryYear)} disabled={yearSummaryLoading}>
+                onClick={() => printYearEndSummary(summaryYear)} disabled={yearSummaryLoading || isSuspended}>
                 {yearSummaryLoading ? 'Generating…' : `Export ${summaryYear} Remittance Summary`}
               </button>
             </div>
@@ -1316,7 +1319,7 @@ export default function Payroll() {
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <button className="pr-btn pr-btn--primary" style={{ fontSize: 12, padding: '5px 12px' }}
-                          onClick={() => saveEdit(run.id)} disabled={editSaving}>
+                          onClick={() => saveEdit(run.id)} disabled={editSaving || isSuspended}>
                           {editSaving ? '…' : 'Save'}
                         </button>
                         <button className="pr-btn pr-btn--ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={cancelEdit}>
@@ -1335,12 +1338,16 @@ export default function Payroll() {
                     <td><span className={`pr-badge pr-badge--${run.status}`}>{run.status}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' }}
+                        <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' } }
                           onClick={() => printRemittanceSlip(run)} disabled={remittanceLoadingId === run.id}>
                           {remittanceLoadingId === run.id ? '…' : 'Slip'}
                         </button>
-                        <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => startEdit(run)}>Edit</button>
-                        <button className="pr-btn pr-btn--danger" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => deleteRun(run)}>Delete</button>
+                        <button className="pr-btn" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => startEdit(run)} disabled={isSuspended}>
+                          Edit
+                        </button>
+                        <button className="pr-btn pr-btn--danger" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => deleteRun(run)} disabled={isSuspended}>
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>

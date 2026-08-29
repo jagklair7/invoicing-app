@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -53,6 +54,9 @@ const css = `
     letter-spacing: 0.04em;
   }
   .dash-quick-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ── Disabled button ── */
+  .dash-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* ── Buttons ── */
   .dash-btn {
@@ -313,7 +317,7 @@ function greetingTime() {
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { activeOrg, settings, loading: orgLoading } = useOrg()
+  const { activeOrg, isSuspended, settings, loading: orgLoading } = useOrg()
 
   const [loading, setLoading]       = useState(true)
   const [stats, setStats]           = useState({ total: 0, paid: 0, outstanding: 0, customers: 0, draft: 0, sent: 0 })
@@ -499,10 +503,12 @@ async function fetchAll() {
             <div className="dash-date">{today}</div>
           </div>
           <div className="dash-quick-actions">
-            <button className="dash-btn" onClick={() => navigate('/customers')}>+ New Customer</button>
-            <button className="dash-btn dash-btn--primary" onClick={() => navigate('/invoices/new')}>+ New Invoice</button>
+            <button className="dash-btn" onClick={() => navigate('/customers')} disabled={isSuspended}>+ New Customer</button>
+            <button className="dash-btn dash-btn--primary" onClick={() => navigate('/invoices/new')} disabled={isSuspended}>+ New Invoice</button>
           </div>
         </div>
+        
+        <SuspendedBanner />
 
         {/* ── Stat cards ── */}
         <div className="dash-grid">

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const css = `
   .po-root {
@@ -49,6 +50,7 @@ const css = `
   .po-btn--primary:hover { background: var(--teal-mid); border-color: var(--teal-mid); color: white; }
   .po-btn--danger { color: var(--red); border-color: #fecaca; }
   .po-btn--danger:hover { background: #fff5f5; border-color: var(--red); }
+  .po-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .po-panel {
     max-width: 1100px; margin: 0 auto 20px;
@@ -96,7 +98,7 @@ const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA',
 const STATUS_LABELS = { draft: 'Draft', sent: 'Sent', received: 'Received', canceled: 'Canceled' }
 
 export default function PurchaseOrders() {
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const navigate = useNavigate()
   const [pos, setPos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -159,8 +161,11 @@ export default function PurchaseOrders() {
             <div className="po-title">Purchase Orders</div>
             <div className="po-subtitle">{pos.length} purchase order{pos.length !== 1 ? 's' : ''}</div>
           </div>
-          <button className="po-btn po-btn--primary" onClick={createPO}>+ New Purchase Order</button>
+          <button className="po-btn po-btn--primary" onClick={createPO} disabled={isSuspended}>
+            + New Purchase Order
+          </button>
         </div>
+        <SuspendedBanner />
 
         <div className="po-panel">
           {loading ? (

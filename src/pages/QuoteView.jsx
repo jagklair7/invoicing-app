@@ -1,9 +1,9 @@
 import { useState, useEffect, useContext } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../app/supabaseClient";
-//import { OrgContext } from "../context/OrgContext";
 import { useOrg } from "../context/OrgContext";
 import { exportQuotePDF } from "../utils/exportQuotePDF";
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const STATUS_COLORS = {
   draft:     { bg: "#f3f4f6", color: "#6b7280" },
@@ -15,7 +15,7 @@ const STATUS_COLORS = {
 
 export default function QuoteView() {
  // const { activeOrg } = useContext(OrgContext);
-  const { activeOrg } = useOrg();
+  const { activeOrg, isSuspended } = useOrg();
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -142,7 +142,7 @@ export default function QuoteView() {
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "32px 24px" }}>
 
       {/* ── Header ── */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 16 }}>
         <div>
           <button
             onClick={() => navigate("/quotes")}
@@ -167,17 +167,17 @@ export default function QuoteView() {
         {/* Actions */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {quote.status === "draft" && (
-            <button className="inv-btn" onClick={() => navigate(`/quotes/${id}/edit`)}>Edit</button>
+            <button className="inv-btn" onClick={() => navigate(`/quotes/${id}/edit`)} disabled={isSuspended}>Edit</button>
           )}
-          <button className="inv-btn" onClick={() => exportQuotePDF(quote, customer)}>Export PDF</button>
+          <button className="inv-btn" onClick={() => exportQuotePDF(quote, customer, activeOrg)}>Export PDF</button>
           <button className="inv-btn" onClick={copyPublicLink}>{copyMsg || "Copy Link"}</button>
           {quote.status === "draft" && (
-            <button className="inv-btn inv-btn-primary" onClick={() => updateStatus("sent")} disabled={actionLoading}>
+            <button className="inv-btn inv-btn-primary" onClick={() => updateStatus("sent")} disabled={actionLoading || isSuspended}>
               Mark as Sent
             </button>
           )}
           {quote.status === "approved" && !quote.converted_invoice_id && (
-            <button className="inv-btn inv-btn-primary" onClick={convertToInvoice} disabled={actionLoading}>
+            <button className="inv-btn inv-btn-primary" onClick={convertToInvoice} disabled={actionLoading || isSuspended}>
               {actionLoading ? "Converting…" : "Convert to Invoice"}
             </button>
           )}
@@ -188,6 +188,8 @@ export default function QuoteView() {
           )}
         </div>
       </div>
+
+      <SuspendedBanner />
 
       {/* ── Public link banner ── */}
       <div style={{

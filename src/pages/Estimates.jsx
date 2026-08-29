@@ -62,6 +62,8 @@ const css = `
   .act-item--danger { color: #dc2626; }
   .act-item--danger:hover { background: #fff5f5; }
   .act-item-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+  .act-item:disabled { opacity: 0.4; cursor: not-allowed; }
+  .act-item:disabled:hover { background: none; }
 
   .inv-overlay {
     position: fixed; inset: 0; background: rgba(15,23,42,0.45);
@@ -175,7 +177,7 @@ function ActionMenu({ est, onAction, isSuspended }) {
           </div>
           <div className="act-group">
             {est.status !== 'converted' && est.status !== 'declined' && (
-              <button className="act-item" onClick={e => pick('send', e)}>
+              <button className="act-item" onClick={e => pick('send', e)} disabled={isSuspended}>
                 <span className="act-item-icon">✉️</span> Send Estimate
               </button>
             )}
@@ -493,6 +495,8 @@ export default function Estimates() {
 
   const filtered = estimates.filter(e => filter === 'all' ? true : e.status === filter)
 
+  console.log('isSuspended:', isSuspended)
+  
   return (
     <>
       <style>{css}</style>

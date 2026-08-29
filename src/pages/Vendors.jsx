@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import VendorInvoicesSection from '../components/VendorInvoicesSection'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const PROVINCES = [
   'AB','BC','MB','NB','NL','NS','ON','PE','QC','SK','NT','NU','YT'
@@ -20,7 +21,7 @@ const DEFAULT_FORM = {
 }
 
 export default function Vendors() {
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const [vendors, setVendors] = useState([])
   const [editingId, setEditingId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -192,15 +193,16 @@ export default function Vendors() {
         {error && <div className="mt-5 rounded-xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{error}</div>}
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button type="submit" disabled={saving} className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-600 transition disabled:opacity-50">
-            {saving ? 'Saving…' : editingId ? 'Update vendor' : 'Add vendor'}
+          <button type="submit" disabled={saving || isSuspended} className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-600 transition disabled:opacity-50">
+            {saving ? 'Saving…' : editingId ? 'Update vendor' : 'Add vendor' }
           </button>
           {editingId && (
-            <button type="button" onClick={cancelEdit} className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+            <button type="button" onClick={cancelEdit} disabled={isSuspended} className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
               Cancel
             </button>
           )}
         </div>
+        <SuspendedBanner />
       </form>
 
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
@@ -242,14 +244,18 @@ export default function Vendors() {
                     {[vendor.city, vendor.province].filter(Boolean).join(', ') || '—'}
                   </td>
                   <td className="px-6 py-4 text-right space-x-4">
-                    <button onClick={() => startEdit(vendor)} className="text-teal-600 hover:underline text-sm font-semibold">Edit</button>
-                    <button onClick={() => deleteVendor(vendor.id)} className="text-red-500 hover:underline text-sm font-semibold">Delete</button>
+                    <button onClick={() => startEdit(vendor)} className="text-teal-600 hover:underline text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline" disabled={isSuspended}>
+                      Edit
+                    </button>
+                    <button onClick={() => deleteVendor(vendor.id)} className="text-red-500 hover:underline text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline" disabled={isSuspended}>
+                      Delete
+                    </button>
                   </td>
                 </tr>
                 {expandedId === vendor.id && (
                   <tr key={`${vendor.id}-invoices`}>
                     <td colSpan={4} className="p-0">
-                      <VendorInvoicesSection vendorId={vendor.id} orgId={activeOrg.orgId} />
+                      <VendorInvoicesSection vendorId={vendor.id} orgId={activeOrg.orgId} isSuspended={isSuspended} />
                     </td>
                   </tr>
                 )}

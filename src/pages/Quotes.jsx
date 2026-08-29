@@ -1,8 +1,8 @@
 import { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../app/supabaseClient";
-//import { OrgContext } from "../context/OrgContext";
 import { useOrg } from "../context/OrgContext";
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const statusColor = {
   draft: { bg: "#f3f4f6", color: "#6b7280" },
@@ -14,7 +14,7 @@ const statusColor = {
 
 export default function Quotes() {
  // const { activeOrg } = useContext(OrgContext);
-  const { activeOrg } = useOrg();
+  const { activeOrg, isSuspended } = useOrg();
   const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,20 +27,23 @@ export default function Quotes() {
   }, [activeOrg?.orgId]);
 
   async function fetchQuotes() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("quotes")
-      .select(`
-        id, quote_number, status, issue_date, expiry_date,
-        selected_option, options, notes, customer_token,
-        customers (id, name, email)
-      `)
-      .eq("org_id", activeOrg.orgId)
-      .order("created_at", { ascending: false });
+  setLoading(true);
+  const { data, error } = await supabase
+    .from("quotes")
+    .select(`
+      id, quote_number, status, issue_date, expiry_date,
+      selected_options, options, notes, customer_token,
+      customers (id, name, email)
+    `)
+    .eq("org_id", activeOrg.orgId)
+    .order("created_at", { ascending: false });
 
-    if (!error) setQuotes(data || []);
-    setLoading(false);
+  if (error) {
+    console.error('fetchQuotes error:', error);
   }
+  setQuotes(data || []);
+  setLoading(false);
+}
 
   const filtered = quotes.filter((q) => {
     const matchSearch =
@@ -51,18 +54,20 @@ export default function Quotes() {
   });
 
   function getTotal(quote) {
-    if (!quote.options?.length) return 0;
-    if (quote.selected_option) {
-      const opt = quote.options.find((o) => o.label === quote.selected_option);
-      return opt?.total ?? 0;
-    }
-    // Show range if no option selected
-    const totals = quote.options.map((o) => o.total ?? 0);
-    const min = Math.min(...totals);
-    const max = Math.max(...totals);
-    if (min === max) return min;
-    return `$${min.toLocaleString("en-CA", { minimumFractionDigits: 2 })} – $${max.toLocaleString("en-CA", { minimumFractionDigits: 2 })}`;
+  if (!quote.options?.length) return 0;
+  if (quote.selected_options?.length) {
+    const total = quote.options
+      .filter(o => quote.selected_options.includes(o.label))
+      .reduce((sum, o) => sum + (o.total ?? 0), 0);
+    return total;
   }
+  // Show range if no option selected
+  const totals = quote.options.map((o) => o.total ?? 0);
+  const min = Math.min(...totals);
+  const max = Math.max(...totals);
+  if (min === max) return min;
+  return `$${min.toLocaleString("en-CA", { minimumFractionDigits: 2 })} – $${max.toLocaleString("en-CA", { minimumFractionDigits: 2 })}`;
+}
 
   function formatTotal(quote) {
     const val = getTotal(quote);
@@ -82,11 +87,13 @@ export default function Quotes() {
         </div>
         <button
           className="inv-btn inv-btn-primary"
-          onClick={() => navigate("/quotes/new")}
-        >
+          onClick={() => navigate("/quotes/new") }
+          disabled={isSuspended}>
           + New Quote
         </button>
       </div>
+
+       <SuspendedBanner />
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
@@ -124,7 +131,7 @@ export default function Quotes() {
           <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
           <div style={{ fontWeight: 600, color: "#374151", marginBottom: 6 }}>No quotes yet</div>
           <div style={{ fontSize: 14, marginBottom: 20 }}>Create your first quote with multiple options for your customer to choose from.</div>
-          <button className="inv-btn inv-btn-primary" onClick={() => navigate("/quotes/new")}>
+          <button className="inv-btn inv-btn-primary" onClick={() => navigate("/quotes/new")} disabled={isSuspended}>
             + New Quote
           </button>
         </div>
@@ -172,8 +179,8 @@ export default function Quotes() {
                           <span key={opt.label} style={{
                             display: "inline-flex", alignItems: "center", justifyContent: "center",
                             width: 24, height: 24, borderRadius: 6,
-                            background: q.selected_option === opt.label ? "#4f46e5" : "#e5e7eb",
-                            color: q.selected_option === opt.label ? "#fff" : "#374151",
+                            background: (q.selected_options || []).includes(opt.label) ? "#4f46e5" : "#e5e7eb",
+                            color: (q.selected_options || []).includes(opt.label) ? "#fff" : "#374151",
                             fontSize: 11, fontWeight: 700
                           }}>
                             {opt.label}

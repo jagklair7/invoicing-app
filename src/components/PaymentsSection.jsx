@@ -70,6 +70,11 @@ const css = `
     cursor: pointer;
     transition: all .15s;
   }
+  .pay-add-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+  }
+
   .pay-add-btn:hover { background: #d0eeef; border-color: #0d7377; }
 
   /* Payment list */

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { usePlan } from '../context/PlanContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const PROVINCES = [
   'AB','BC','MB','NB','NL','NS','ON','PE','QC','SK','NT','NU','YT'
@@ -34,7 +35,7 @@ const DEFAULT_FORM = {
 }
 
 export default function Employees() {
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const { can, withinLimit, features } = usePlan()
   const [employees, setEmployees] = useState([])
   const [editingId, setEditingId] = useState(null)
@@ -303,15 +304,17 @@ export default function Employees() {
         {error && <div className="mt-5 rounded-xl bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{error}</div>}
 
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button type="submit" className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-600 transition">
-            {editingId ? 'Update employee' : 'Add employee'}
+          <button type="submit" className="inline-flex items-center justify-center rounded-xl bg-teal-700 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-600 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline" disabled={isSuspended}>
+            {editingId ? 'Update employee' : 'Add Employee'}
           </button>
           {editingId && (
-            <button type="button" onClick={cancelEdit} className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">
+            <button type="button" onClick={cancelEdit} className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition" disabled={isSuspended}>
               Cancel
             </button>
           )}
         </div>
+        <SuspendedBanner />
+
       </form>
 
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
@@ -352,8 +355,8 @@ export default function Employees() {
                 <td className="px-6 py-4 text-slate-700">{employee.pay_frequency}</td>
                 <td className="px-6 py-4 text-slate-700 capitalize">{employee.status}</td>
                 <td className="px-6 py-4 text-right space-x-4">
-                  <button onClick={() => startEdit(employee)} className="text-teal-600 hover:underline text-sm font-semibold">Edit</button>
-                  <button onClick={() => deleteEmployee(employee.id)} className="text-red-500 hover:underline text-sm font-semibold">Delete</button>
+                  <button onClick={() => startEdit(employee)} className="text-teal-600 hover:underline text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline" disabled={isSuspended}>Edit</button>
+                  <button onClick={() => deleteEmployee(employee.id)} className="text-red-500 hover:underline text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:no-underline" disabled={isSuspended}>Delete</button>
                 </td>
               </tr>
             ))}
