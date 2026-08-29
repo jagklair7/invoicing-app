@@ -2,11 +2,12 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
+import SuspendedBanner from '../components/SuspendedBanner'
 
 const EMPTY = { name: '', description: '', unit_price: '' }
 
 export default function ProductsPage() {
-  const { activeOrg } = useOrg()
+  const { activeOrg, isSuspended } = useOrg()
   const [products, setProducts] = useState([])
   const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -110,14 +111,18 @@ export default function ProductsPage() {
           <h1 style={{ fontSize: 22, fontWeight: 600, color: '#1e293b', margin: 0 }}>Products & Services</h1>
           {activeOrg && <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0 0' }}>{activeOrg.name}</p>}
         </div>
-        <button onClick={openNew} style={{
+        <button onClick={openNew} disabled={isSuspended} style={{
           background: '#0d7377', color: 'white', border: 'none',
           borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 600,
-          cursor: 'pointer', fontFamily: 'inherit',
+          cursor: isSuspended ? 'not-allowed' : 'pointer',
+          opacity: isSuspended ? 0.5 : 1,
+          fontFamily: 'inherit',
         }}>
           + Add Product
         </button>
       </div>
+
+      <SuspendedBanner />
 
       {/* Add / Edit Form */}
       {showForm && (
@@ -174,10 +179,11 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-            <button onClick={handleSave} disabled={saving} style={{
+            <button onClick={handleSave} disabled={saving || isSuspended}  style={{
               background: '#0d7377', color: 'white', border: 'none',
               borderRadius: 8, padding: '9px 20px', fontSize: 13, fontWeight: 600,
-              cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1,
+              cursor: (saving || isSuspended) ? 'not-allowed' : 'pointer',
+              opacity: (saving || isSuspended) ? 0.6 : 1,
               fontFamily: 'inherit',
             }}>
               {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Product'}
@@ -243,11 +249,11 @@ export default function ProductsPage() {
                 {fmt(p.unit_price)}
               </div>
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                <button onClick={() => openEdit(p)} style={iconBtnStyle('#64748b')}>✏</button>
+                <button onClick={() => openEdit(p)} disabled={isSuspended} style={iconBtnStyle('#64748b', isSuspended)}>✏</button>
                 <button
                   onClick={() => handleDelete(p)}
-                  disabled={deleting === p.id}
-                  style={iconBtnStyle('#e53e3e')}
+                  disabled={deleting === p.id || isSuspended}
+                  style={iconBtnStyle('#e53e3e', isSuspended)}
                 >
                   {deleting === p.id ? '…' : '×'}
                 </button>
@@ -274,9 +280,11 @@ const inputStyle = {
   transition: 'border-color .15s',
 }
 
-const iconBtnStyle = (color) => ({
+const iconBtnStyle = (color, disabled) => ({
   width: 28, height: 28, border: '1.5px solid #e2e8f0',
-  borderRadius: 6, background: 'none', cursor: 'pointer',
+  borderRadius: 6, background: 'none',
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.4 : 1,
   color, fontSize: 14, display: 'flex', alignItems: 'center',
   justifyContent: 'center', fontFamily: 'inherit',
 })
