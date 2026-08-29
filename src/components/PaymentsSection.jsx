@@ -294,7 +294,9 @@ const css = `
   }
 `
 
-export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaymentAdded, onPaymentDeleted }) {
+// Update the function signature:
+export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoice, customer, isSuspended, onPaymentAdded, onPaymentDeleted }) {
+
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -421,7 +423,7 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, onPaym
         <div className="pay-section-header">
           <span className="pay-section-title">Payments Received</span>
           {!showForm && (
-            <button className="pay-add-btn" onClick={() => setShowForm(true)}>
+            <button className="pay-add-btn" onClick={() => setShowForm(true)} disabled={isSuspended}>
               + Record Payment
             </button>
           )}
