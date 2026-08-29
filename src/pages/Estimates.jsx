@@ -129,7 +129,7 @@ const css = `
 `
 
 // ── Action Dropdown ───────────────────────────────────────────────────────────
-function ActionMenu({ est, onAction }) {
+function ActionMenu({ est, onAction, isSuspended }) {
   const [open, setOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const btnRef = useRef()
@@ -169,7 +169,7 @@ function ActionMenu({ est, onAction }) {
             <button className="act-item" onClick={e => pick('view', e)}>
               <span className="act-item-icon">👁</span> View
             </button>
-            <button className="act-item" onClick={e => pick('edit', e)}>
+            <button className="act-item" onClick={e => pick('edit', e)} disabled={isSuspended}>
               <span className="act-item-icon">✏️</span> Edit
             </button>
           </div>
@@ -180,28 +180,28 @@ function ActionMenu({ est, onAction }) {
               </button>
             )}
             {(est.status === 'sent' || est.status === 'draft') && (
-              <button className="act-item" onClick={e => pick('approve', e)}>
+              <button className="act-item" onClick={e => pick('approve', e)} disabled={isSuspended}>
                 <span className="act-item-icon">✅</span> Mark Approved
-              </button>
-            )}
+              </button> 
+            )}  
             {(est.status === 'sent' || est.status === 'draft') && (
-              <button className="act-item" onClick={e => pick('decline', e)}>
+              <button className="act-item" onClick={e => pick('decline', e)} disabled={isSuspended}>
                 <span className="act-item-icon">❌</span> Mark Declined
               </button>
             )}
             {est.status === 'approved' && (
-              <button className="act-item" onClick={e => pick('convert', e)}>
+              <button className="act-item" onClick={e => pick('convert', e)} disabled={isSuspended}>
                 <span className="act-item-icon">🔄</span> Convert to Invoice
               </button>
             )}
           </div>
           <div className="act-group">
-            <button className="act-item" onClick={e => pick('pdf', e)}>
+            <button className="act-item" onClick={e => pick('pdf', e)} disabled={isSuspended}>
               <span className="act-item-icon">↓</span> Export as PDF
             </button>
           </div>
           <div className="act-group">
-            <button className="act-item act-item--danger" onClick={e => pick('delete', e)}>
+            <button className="act-item act-item--danger" onClick={e => pick('delete', e)} disabled={isSuspended}>
               <span className="act-item-icon">🗑</span> Delete
             </button>
           </div>
@@ -337,7 +337,7 @@ function ConvertModal({ est, activeOrg, onClose, onDone, navigate }) {
 
       // Create invoice
       const { data: newInv, error: invErr } = await supabase.from('invoices').insert({
-        org_id:      activeOrg.orgId, isSuspended: activeOrg.isSuspended,
+        org_id:      activeOrg.orgId,
         customer_id: est.customer_id,
         number:      newNumber,
         date:        new Date().toISOString().split('T')[0],
@@ -357,7 +357,7 @@ function ConvertModal({ est, activeOrg, onClose, onDone, navigate }) {
         await supabase.from('invoice_items').insert(
           lineItems.map(i => ({
             invoice_id:     newInv.id,
-            org_id:         activeOrg.orgId, isSuspended: activeOrg.isSuspended,
+            org_id:         activeOrg.orgId,
             name:           i.name,
             quantity:       i.quantity,
             unit_price:     i.unit_price,
@@ -503,7 +503,8 @@ export default function Estimates() {
             <h1 className="text-2xl font-semibold">Estimates</h1>
             <p className="text-sm text-gray-500">Create and manage quotes for your customers</p>
           </div>
-          <button onClick={() => navigate('/estimates/new')} className="bg-black text-white px-4 py-2 rounded-xl">
+          <button onClick={() => navigate('/estimates/new')} disabled={isSuspended} className="bg-black text-white px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+>
             + New Estimate
           </button>
         </div>
@@ -511,7 +512,7 @@ export default function Estimates() {
         {/* Filters */}
         <div className="flex gap-2 mb-4">
           {['all', 'draft', 'sent', 'approved', 'declined', 'converted'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} disabled={isSuspended}
+            <button key={f} onClick={() => setFilter(f)}
               className={`px-3 py-1 rounded-full text-sm border capitalize ${
                 filter === f ? 'bg-black text-white border-black' : 'bg-white border-gray-200'
               }`}>
@@ -519,6 +520,8 @@ export default function Estimates() {
             </button>
           ))}
         </div>
+
+        <SuspendedBanner />
 
         {/* Table */}
         <div className="bg-white rounded-2xl shadow overflow-hidden">
@@ -562,7 +565,7 @@ export default function Estimates() {
                       {fmt(est.total || 0)}
                     </td>
                     <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
-                      <ActionMenu est={est} onAction={handleAction} />
+                      <ActionMenu est={est} onAction={handleAction} isSuspended={isSuspended} />
                     </td>
                   </tr>
                 )
