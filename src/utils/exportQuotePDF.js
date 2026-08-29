@@ -221,38 +221,14 @@ export async function exportQuotePDF(quote, customer, org) {
   // ───────────────────────────────────────────────────────────────────────────
 
   const COMPANY = {
-    name:
-      orgRow?.company_name ||
-      org?.name ||
-      'Your Company',
-
-    address:
-      orgRow?.company_address ||
-      '',
-
-    city:
-      orgRow?.company_city ||
-      '',
-
-    phone:
-      orgRow?.company_phone ||
-      org?.phone ||
-      '',
-
-    email:
-      org?.email ||
-      '',
-
-    gst:
-      orgRow?.gst_number ||
-      '',
-
-    logo:
-      orgRow?.company_logo_url ||
-      '/icon.png',
+  name:    orgRow?.company_name    || org?.name || '',
+  address: orgRow?.company_address || '',
+  city:    orgRow?.company_city    || '',
+  phone:   orgRow?.company_phone   || '',
+  email:   orgRow?.company_email   || '',
+  gst:     orgRow?.gst_number      || '',
+  logo:    orgRow?.company_logo_url || '/icon.png',
   }
-
-
   // ───────────────────────────────────────────────────────────────────────────
   // 3. Initialize document
   // ───────────────────────────────────────────────────────────────────────────

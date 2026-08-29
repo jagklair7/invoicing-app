@@ -473,11 +473,15 @@ export default function Settings() {
     }
   }
 
-  async function handleLogoUpload(e) {
+    async function handleLogoUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
       alert('Please upload an image file (PNG, JPG, SVG).'); return
+    }
+    if (planStatus?.planName === 'free') {
+      alert('Custom logos are available on paid plans. Upgrade to add your logo.')
+      return
     }
     setUploading(true)
     try {
@@ -562,6 +566,60 @@ export default function Settings() {
               </a>
             )}
           </div>
+        )}
+
+        {planStatus?.planName === 'free' ? (
+          <div style={{
+            border: '1.5px dashed #e2e8f0', borderRadius: 12, padding: 24,
+            textAlign: 'center', background: '#f8fafc',
+          }}>
+            <span style={{ fontSize: 28 }}>🔒</span>
+            <div style={{ fontSize: 13, fontWeight: 500, color: '#475569', marginTop: 8 }}>
+              Custom logos are available on paid plans
+            </div>
+            <a href="mailto:info@klair.ca?subject=Upgrade%20my%20plan" style={{ fontSize: 12, color: '#0d7377', fontWeight: 600, marginTop: 6, display: 'inline-block' }}>
+              Upgrade your plan →
+            </a>
+          </div>
+        ) : (
+          // existing logo-upload-area JSX goes here unchanged
+          <div className="settings-card">
+          <div className="settings-card-title">Company Logo</div>
+          <input ref={fileInputRef} type="file" accept="image/*"
+            style={{ display: 'none' }} onChange={handleLogoUpload} />
+          <div
+            className={`logo-upload-area ${formData.company_logo_url ? 'has-logo' : ''}`}
+            onClick={() => !uploading && fileInputRef.current?.click()}
+          >
+            {formData.company_logo_url ? (
+              <>
+                <img src={formData.company_logo_url} alt="Company logo" className="logo-preview" />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <button className="logo-change-btn"
+                    onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
+                    Change logo
+                  </button>
+                  <button className="logo-change-btn"
+                    style={{ color: '#e53e3e', background: '#fff5f5', borderColor: '#fecaca' }}
+                    onClick={e => { e.stopPropagation(); setFormData(prev => ({ ...prev, company_logo_url: '' })) }}>
+                    Remove
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="logo-upload-icon">🖼</span>
+                <div className="logo-upload-label">Click to upload your logo</div>
+                <div className="logo-upload-hint">PNG, JPG or SVG · Max 2MB · Recommended: 400×200px</div>
+              </>
+            )}
+          </div>
+          {uploading && (
+            <div className="upload-progress">
+              <div className="upload-spinner" /> Uploading logo…
+            </div>
+          )}
+        </div>
         )}
 
         {/* ── Logo ── */}
