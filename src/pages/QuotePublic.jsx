@@ -46,7 +46,7 @@ export default function QuotePublic() {
     setLoading(false);
   }
 
-  async function handleApprove() {
+    async function handleApprove() {
     if (!selected) return;
     setSubmitting(true);
     const { error } = await supabase
@@ -54,7 +54,9 @@ export default function QuotePublic() {
       .update({ selected_options: [selected], status: "approved" })
       .eq("customer_token", token);
 
-    if (!error) {
+    if (error) {
+      alert('Failed to approve quote: ' + error.message);
+    } else {
       setSubmitted(true);
       setQuote((q) => ({ ...q, selected_options: [selected], status: "approved" }));
     }
@@ -63,11 +65,16 @@ export default function QuotePublic() {
 
   async function handleDecline() {
     setSubmitting(true);
-    await supabase
+    const { error } = await supabase
       .from("quotes")
       .update({ status: "declined" })
       .eq("customer_token", token);
-    setQuote((q) => ({ ...q, status: "declined" }));
+
+    if (error) {
+      alert('Failed to decline quote: ' + error.message);
+    } else {
+      setQuote((q) => ({ ...q, status: "declined" }));
+    }
     setSubmitting(false);
   }
 
