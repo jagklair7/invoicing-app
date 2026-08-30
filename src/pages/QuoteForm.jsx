@@ -173,6 +173,7 @@ export default function QuoteForm() {
 
     async function handleSave(status = "draft") {
     if (!form.quote_number.trim()) return alert("Quote number is required.");
+    if (!form.customer_id) return alert("Please select a customer before saving.");
     setSaving(true);
 
     const options = form.options.map((opt) => {
@@ -228,9 +229,6 @@ export default function QuoteForm() {
           </h1>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          <button className="inv-btn" onClick={() => handleSave("draft")} disabled={saving}>
-            Save Draft
-          </button>
           <button className="inv-btn inv-btn-primary" onClick={() => handleSave("draft")} disabled={saving}>
             {saving ? "Saving…" : "Save Quote"}
           </button>
@@ -244,11 +242,12 @@ export default function QuoteForm() {
       }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
           <div>
-            <label className="inv-label">Customer</label>
+            <label className="inv-label">Customer *</label>
             <select
               className="inv-input"
               value={form.customer_id}
               onChange={(e) => setField("customer_id", e.target.value)}
+              required
             >
               <option value="">— Select customer —</option>
               {customers.map((c) => (
@@ -492,7 +491,6 @@ export default function QuoteForm() {
       {/* Bottom actions */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
         <button className="inv-btn" onClick={() => navigate("/quotes")}>Cancel</button>
-        <button className="inv-btn" onClick={() => handleSave("draft")} disabled={saving}>Save Draft</button>
         <button className="inv-btn inv-btn-primary" onClick={() => handleSave("draft")} disabled={saving}>
           {saving ? "Saving…" : "Save Quote"}
         </button>

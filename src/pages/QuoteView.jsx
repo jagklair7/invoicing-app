@@ -64,6 +64,10 @@ export default function QuoteView() {
       alert("No options selected by the customer yet.");
       return;
     }
+    if (!quote.customer_id) {
+      alert("This quote has no customer assigned. Edit the quote and select a customer before converting it to an invoice.");
+      return;
+    }
     setActionLoading(true);
 
     // Merge line items from all selected options.
