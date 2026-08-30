@@ -92,113 +92,109 @@ export default function App() {
     </div>
   )
 
-  return (
+    return (
     <OrgProvider>
-      <Layout session={session}>
-        <Routes>
+      <Routes>
+        {/* ── Fully public, no Layout/shell at all ──────────────────── */}
+        <Route path="/q/:token" element={<QuotePublic />} />
 
-          {/* ── Public ───────────────────────────────────────────────── */}
-          <Route path="/login"         element={!session ? <Login />  : <Navigate to="/" replace />} />
-          <Route path="/signup"        element={!session ? <Signup /> : <Navigate to="/" replace />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
+        {/* ── Everything else lives inside the app shell ────────────── */}
+        <Route path="/*" element={
+          <Layout session={session}>
+            <Routes>
+              <Route path="/login"         element={!session ? <Login />  : <Navigate to="/" replace />} />
+              <Route path="/signup"        element={!session ? <Signup /> : <Navigate to="/" replace />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
 
-          {/* ── Onboarding (logged in but no org yet) ────────────────── */}
-          <Route path="/onboarding" element={
-            session ? <Onboarding /> : <Navigate to="/login" replace />
-          } />
+              <Route path="/onboarding" element={
+                session ? <Onboarding /> : <Navigate to="/login" replace />
+              } />
 
-          {/* ── Create additional org (already has at least one) ─────── */}
-          <Route path="/create-org" element={
-            <ProtectedRoute session={session}><CreateOrganization /></ProtectedRoute>
-          } />
+              <Route path="/create-org" element={
+                <ProtectedRoute session={session}><CreateOrganization /></ProtectedRoute>
+              } />
 
-          {/* ── Super Admin ──────────────────────────────────────────── */}
-          <Route path="/admin" element={
-            <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
-          } />
-          <Route path="/admin/analytics" element={
-            <SuperAdminRoute session={session}><GlobalAnalytics /></SuperAdminRoute>
-          } />
-          <Route path="/admin/seed-plans" element={
-            <SuperAdminRoute session={session}><SeedPlans /></SuperAdminRoute>
-          } />
-          <Route path="/admin/*" element={
-            <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
-          } />
+              <Route path="/admin" element={
+                <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
+              } />
+              <Route path="/admin/analytics" element={
+                <SuperAdminRoute session={session}><GlobalAnalytics /></SuperAdminRoute>
+              } />
+              <Route path="/admin/seed-plans" element={
+                <SuperAdminRoute session={session}><SeedPlans /></SuperAdminRoute>
+              } />
+              <Route path="/admin/*" element={
+                <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
+              } />
 
-          {/* ── App (requires org) ───────────────────────────────────── */}
-          <Route path="/" element={
-            <OrgGuard session={session}><Dashboard /></OrgGuard>
-          } />
-          <Route path="/customers" element={
-            <OrgGuard session={session}><Customers /></OrgGuard>
-          } />
-          <Route path="/customers/:id/statement" element={
-            <OrgGuard session={session}><CustomerStatement /></OrgGuard>
-          } />
-          <Route path="/invoices" element={
-            <OrgGuard session={session}><Invoices /></OrgGuard>
-          } />
-          <Route path="/invoices/new" element={
-            <OrgGuard session={session}><InvoiceForm /></OrgGuard>
-          } />
-          <Route path="/invoices/:id" element={
-            <OrgGuard session={session}><InvoiceView /></OrgGuard>
-          } />
+              <Route path="/" element={
+                <OrgGuard session={session}><Dashboard /></OrgGuard>
+              } />
+              <Route path="/customers" element={
+                <OrgGuard session={session}><Customers /></OrgGuard>
+              } />
+              <Route path="/customers/:id/statement" element={
+                <OrgGuard session={session}><CustomerStatement /></OrgGuard>
+              } />
+              <Route path="/invoices" element={
+                <OrgGuard session={session}><Invoices /></OrgGuard>
+              } />
+              <Route path="/invoices/new" element={
+                <OrgGuard session={session}><InvoiceForm /></OrgGuard>
+              } />
+              <Route path="/invoices/:id" element={
+                <OrgGuard session={session}><InvoiceView /></OrgGuard>
+              } />
 
-          <Route path="/vendors" element={
-            <OrgGuard session={session}><Vendors /></OrgGuard>
-          } />
-          <Route path="/purchase-orders" element={
-            <OrgGuard session={session}><PurchaseOrders /></OrgGuard>
-          } />
-          <Route path="/purchase-orders/:id" element={
-            <OrgGuard session={session}><PurchaseOrderView /></OrgGuard>
-          } />
-          
-          <Route path="/estimates" element={
-            <OrgGuard session={session}><Estimates /></OrgGuard>
-          } />
-          <Route path="/estimates/new" element={
-            <OrgGuard session={session}><EstimateForm /></OrgGuard>
-          } />
-          <Route path="/estimates/:id" element={
-            <OrgGuard session={session}><EstimateView /></OrgGuard>
-          } />
-          <Route path="/estimates/:id/edit" element={
-            <OrgGuard session={session}><EstimateForm /></OrgGuard>
-          } />
+              <Route path="/vendors" element={
+                <OrgGuard session={session}><Vendors /></OrgGuard>
+              } />
+              <Route path="/purchase-orders" element={
+                <OrgGuard session={session}><PurchaseOrders /></OrgGuard>
+              } />
+              <Route path="/purchase-orders/:id" element={
+                <OrgGuard session={session}><PurchaseOrderView /></OrgGuard>
+              } />
 
-          <Route path="/settings" element={
-            <OrgGuard session={session}><Settings /></OrgGuard>
-          } />
-          <Route path="/products" element={
-            <OrgGuard session={session}><ProductsPage /></OrgGuard>
-          } />
-          <Route path="/employees" element={
-            <OrgGuard session={session}><Employees /></OrgGuard>
-          } />
-          <Route path="/payroll" element={
-            <OrgGuard session={session}><Payroll /></OrgGuard>
-          } />
-          <Route path="/organizations" element={
-            <SuperAdminRoute session={session}><Organizations /></SuperAdminRoute>
-          } />
+              <Route path="/estimates" element={
+                <OrgGuard session={session}><Estimates /></OrgGuard>
+              } />
+              <Route path="/estimates/new" element={
+                <OrgGuard session={session}><EstimateForm /></OrgGuard>
+              } />
+              <Route path="/estimates/:id" element={
+                <OrgGuard session={session}><EstimateView /></OrgGuard>
+              } />
+              <Route path="/estimates/:id/edit" element={
+                <OrgGuard session={session}><EstimateForm /></OrgGuard>
+              } />
 
-          {/* Public — no auth wrapper */}
-<Route path="/q/:token" element={<QuotePublic />} />
+              <Route path="/settings" element={
+                <OrgGuard session={session}><Settings /></OrgGuard>
+              } />
+              <Route path="/products" element={
+                <OrgGuard session={session}><ProductsPage /></OrgGuard>
+              } />
+              <Route path="/employees" element={
+                <OrgGuard session={session}><Employees /></OrgGuard>
+              } />
+              <Route path="/payroll" element={
+                <OrgGuard session={session}><Payroll /></OrgGuard>
+              } />
+              <Route path="/organizations" element={
+                <SuperAdminRoute session={session}><Organizations /></SuperAdminRoute>
+              } />
 
-{/* Protected — inside your auth/org wrapper */}
-<Route path="/quotes"          element={<Quotes />} />
-<Route path="/quotes/new"      element={<QuoteForm />} />
-<Route path="/quotes/:id"      element={<QuoteView />} />
-<Route path="/quotes/:id/edit" element={<QuoteForm />} />
+              <Route path="/quotes"          element={<OrgGuard session={session}><Quotes /></OrgGuard>} />
+              <Route path="/quotes/new"      element={<OrgGuard session={session}><QuoteForm /></OrgGuard>} />
+              <Route path="/quotes/:id"      element={<OrgGuard session={session}><QuoteView /></OrgGuard>} />
+              <Route path="/quotes/:id/edit" element={<OrgGuard session={session}><QuoteForm /></OrgGuard>} />
 
-          {/* ── Catch-all ────────────────────────────────────────────── */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-
-        </Routes>
-      </Layout>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Layout>
+        } />
+      </Routes>
     </OrgProvider>
   )
 }

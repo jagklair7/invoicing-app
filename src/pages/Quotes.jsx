@@ -45,6 +45,20 @@ export default function Quotes() {
   setLoading(false);
 }
 
+  async function deleteQuote(quote) {
+    if (!window.confirm(`Delete quote ${quote.quote_number}? This cannot be undone.`)) return;
+    const { error } = await supabase
+      .from("quotes")
+      .delete()
+      .eq("id", quote.id)
+      .eq("org_id", activeOrg.orgId);
+    if (error) {
+      alert('Failed to delete quote: ' + error.message);
+      return;
+    }
+    fetchQuotes();
+  }
+
   const filtered = quotes.filter((q) => {
     const matchSearch =
       q.quote_number?.toLowerCase().includes(search.toLowerCase()) ||
@@ -206,13 +220,23 @@ export default function Quotes() {
                       </span>
                     </td>
                     <td style={{ padding: "14px 16px" }} onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="inv-btn"
-                        style={{ fontSize: 12, padding: "4px 10px" }}
-                        onClick={() => navigate(`/quotes/${q.id}`)}
-                      >
-                        View
-                      </button>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button
+                          className="inv-btn"
+                          style={{ fontSize: 12, padding: "4px 10px" }}
+                          onClick={() => navigate(`/quotes/${q.id}`)}
+                        >
+                          View
+                        </button>
+                        <button
+                          className="inv-btn"
+                          style={{ fontSize: 12, padding: "4px 10px", color: "#dc2626", borderColor: "#fecaca" }}
+                          onClick={() => deleteQuote(q)}
+                          disabled={isSuspended}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

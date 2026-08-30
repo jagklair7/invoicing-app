@@ -124,6 +124,20 @@ export default function QuoteView() {
     setCopyMsg("Copied!");
     setTimeout(() => setCopyMsg(""), 2000);
   }
+  
+  async function handleDeleteQuote() {
+    if (!window.confirm(`Delete quote ${quote.quote_number}? This cannot be undone.`)) return;
+    const { error } = await supabase
+      .from("quotes")
+      .delete()
+      .eq("id", id)
+      .eq("org_id", activeOrg.orgId);
+    if (error) {
+      alert('Failed to delete quote: ' + error.message);
+      return;
+    }
+    navigate("/quotes");
+  }
 
   if (loading) return <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Loading…</div>;
   if (!quote)  return <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Quote not found.</div>;
@@ -165,6 +179,7 @@ export default function QuoteView() {
         </div>
 
         {/* Actions */}
+        
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {quote.status === "draft" && (
             <button className="inv-btn" onClick={() => navigate(`/quotes/${id}/edit`)} disabled={isSuspended}>Edit</button>
@@ -186,6 +201,14 @@ export default function QuoteView() {
               View Invoice →
             </button>
           )}
+          <button
+            className="inv-btn"
+            style={{ color: "#dc2626", borderColor: "#fecaca" }}
+            onClick={handleDeleteQuote}
+            disabled={isSuspended}
+          >
+            🗑 Delete
+          </button>
         </div>
       </div>
 
