@@ -66,21 +66,24 @@ export default function QuoteView() {
     }
     setActionLoading(true);
 
-    // Merge line items from all selected options
+    // Merge line items from all selected options.
+    // invoice_items columns: id, invoice_id, name, quantity, unit_price,
+    // discount_type, discount_value, org_id, product, product_id, created_at
     const chosenOptions = (quote.options || []).filter((o) => selectedOpts.includes(o.label));
     const line_items = chosenOptions.flatMap((opt) =>
       (opt.line_items || []).map((item) => ({
-        description: `[Option ${opt.label}] ${item.description}`,
+        name: `[Option ${opt.label}] ${item.description}`,
         quantity: item.quantity,
         unit_price: item.unit_price,
-        discount: item.discount,
+        discount_value: item.discount,
         discount_type: item.discount_type,
       }))
     );
-    const subtotal      = chosenOptions.reduce((s, o) => s + (parseFloat(o.subtotal)      || 0), 0);
-    const discount_total= chosenOptions.reduce((s, o) => s + (parseFloat(o.discount_total)|| 0), 0);
-    const tax           = chosenOptions.reduce((s, o) => s + (parseFloat(o.tax)           || 0), 0);
-    const total         = chosenOptions.reduce((s, o) => s + (parseFloat(o.total)         || 0), 0);
+    const subtotal = chosenOptions.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
+    const tax      = chosenOptions.reduce((s, o) => s + (parseFloat(o.tax)      || 0), 0);
+    const total    = chosenOptions.reduce((s, o) => s + (parseFloat(o.total)    || 0), 0);
+    // Note: discount_total is intentionally NOT sent — invoices has no such column.
+    // It's already netted into each option's subtotal/total on the quote side.
 
     const { count } = await supabase
       .from("invoices")
@@ -88,18 +91,17 @@ export default function QuoteView() {
       .eq("org_id", activeOrg.orgId);
     const invoiceNumber = `INV-${String((count || 0) + 1).padStart(4, "0")}`;
 
-    const { data: invoice } = await supabase
+    // invoices columns use `number` and `date`, not `invoice_number` / `issue_date`
+    const { data: invoice, error: invoiceError } = await supabase
       .from("invoices")
       .insert({
         org_id: activeOrg.orgId,
         customer_id: quote.customer_id,
-        invoice_number: invoiceNumber,
-        issue_date: new Date().toISOString().split("T")[0],
+        number: invoiceNumber,
+        date: new Date().toISOString().split("T")[0],
         due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
         status: "draft",
-        line_items,
         subtotal,
-        discount_total,
         tax,
         total,
         notes: quote.notes,
@@ -108,13 +110,32 @@ export default function QuoteView() {
       .select()
       .single();
 
-    if (invoice) {
-      await supabase
-        .from("quotes")
-        .update({ status: "converted", converted_invoice_id: invoice.id })
-        .eq("id", id);
-      navigate(`/invoices/${invoice.id}`);
+    if (invoiceError || !invoice) {
+      alert("Failed to create invoice: " + (invoiceError?.message || "Unknown error"));
+      setActionLoading(false);
+      return;
     }
+
+    if (line_items.length) {
+      const itemsPayload = line_items.map((li) => ({
+        ...li,
+        invoice_id: invoice.id,
+        org_id: activeOrg.orgId,
+      }));
+      const { error: itemsError } = await supabase.from("invoice_items").insert(itemsPayload);
+      if (itemsError) {
+        // Invoice already exists at this point; surface the problem instead of
+        // silently leaving it without line items.
+        alert("Invoice created, but adding line items failed: " + itemsError.message);
+      }
+    }
+
+    await supabase
+      .from("quotes")
+      .update({ status: "converted", converted_invoice_id: invoice.id })
+      .eq("id", id);
+
+    navigate(`/invoices/${invoice.id}`);
     setActionLoading(false);
   }
 
