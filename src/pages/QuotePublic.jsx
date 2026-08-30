@@ -21,19 +21,28 @@ export default function QuotePublic() {
     setLoading(true);
     const { data, error } = await supabase
       .from("quotes")
-      .select("*, customers(id, name, email), organizations(name, email, phone, address, logo_url)")
+      .select("*, customers(id, name, email)")
       .eq("customer_token", token)
       .single();
 
     if (error || !data) {
       setError("This quote could not be found or may have expired.");
-    } else {
-      setQuote(data);
-      setCustomer(data.customers);
-      setOrg(data.organizations);
-      if (data.selected_option) setSelected(data.selected_option);
-      if (data.status === "approved") setSubmitted(true);
+      setLoading(false);
+      return;
     }
+
+    setQuote(data);
+    setCustomer(data.customers);
+    if (data.selected_options?.length) setSelected(data.selected_options[0]);
+    if (data.status === "approved") setSubmitted(true);
+
+    const { data: orgSettings } = await supabase
+      .from("organization_settings")
+      .select("company_name, company_email, company_phone, company_address, company_logo_url")
+      .eq("org_id", data.org_id)
+      .single();
+    setOrg(orgSettings);
+
     setLoading(false);
   }
 
@@ -42,12 +51,12 @@ export default function QuotePublic() {
     setSubmitting(true);
     const { error } = await supabase
       .from("quotes")
-      .update({ selected_option: selected, status: "approved" })
+      .update({ selected_options: [selected], status: "approved" })
       .eq("customer_token", token);
 
     if (!error) {
       setSubmitted(true);
-      setQuote((q) => ({ ...q, selected_option: selected, status: "approved" }));
+      setQuote((q) => ({ ...q, selected_options: [selected], status: "approved" }));
     }
     setSubmitting(false);
   }
@@ -91,11 +100,11 @@ export default function QuotePublic() {
       <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "20px 24px" }}>
         <div style={{ maxWidth: 800, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            {org?.logo_url && (
-              <img src={org.logo_url} alt={org?.name} style={{ height: 36, objectFit: "contain", marginBottom: 4 }} />
+            {org?.company_logo_url && (
+              <img src={org.company_logo_url} alt={org?.company_name} style={{ height: 36, objectFit: "contain", marginBottom: 4 }} />
             )}
-            <div style={{ fontWeight: 700, fontSize: 18, color: "#111827" }}>{org?.name}</div>
-            {org?.email && <div style={{ fontSize: 13, color: "#6b7280" }}>{org.email}</div>}
+            <div style={{ fontWeight: 700, fontSize: 18, color: "#111827" }}>{org?.company_name}</div>
+            {org?.company_email && <div style={{ fontSize: 13, color: "#6b7280" }}>{org.company_email}</div>}
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, color: "#9ca3af" }}>Quote</div>
@@ -120,7 +129,7 @@ export default function QuotePublic() {
             <div>
               <div style={{ fontWeight: 700, fontSize: 16, color: "#15803d" }}>Quote Approved!</div>
               <div style={{ fontSize: 14, color: "#166534", marginTop: 2 }}>
-                You selected Option {quote.selected_option}. We'll be in touch shortly.
+                You selected Option {quote.selected_options?.[0]}. We'll be in touch shortly.
               </div>
             </div>
           </div>
@@ -162,7 +171,7 @@ export default function QuotePublic() {
         <div style={{ display: "grid", gap: 20, marginBottom: 32 }}>
           {quote.options?.map((opt) => {
             const isSelected = selected === opt.label;
-            const isApproved = submitted && quote.selected_option === opt.label;
+            const isApproved = submitted && quote.selected_options?.includes(opt.label);
             const canSelect = !submitted && !isDeclined && !isExpired;
 
             return (
@@ -312,7 +321,7 @@ export default function QuotePublic() {
         {/* Footer */}
         <div style={{ marginTop: 48, textAlign: "center", color: "#9ca3af", fontSize: 12 }}>
           Issued {quote.issue_date}{quote.expiry_date ? ` · Expires ${quote.expiry_date}` : ""}
-          {org?.name && ` · ${org.name}`}
+          {org?.company_name && ` · ${org.company_name}`}
         </div>
       </div>
     </div>
