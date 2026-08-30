@@ -74,14 +74,22 @@ export async function exportReceiptPDF(payment, invoice, customer, orgId) {
     .eq('org_id', orgId)
     .single()
 
-  const COMPANY = {
+ /* const COMPANY = {
     name:    orgRow?.company_name    || 'Klair Computer Inc.',
     address: orgRow?.company_address || '1319 Malone Place NW',
     city:    orgRow?.company_city    || 'Edmonton, AB T6R 0G6',
     phone:   orgRow?.company_phone   || '780-265-0042',
     gst:     orgRow?.gst_number      || '831146329',
     logo:    orgRow?.company_logo_url || '/icon.png',
-  }
+  } */
+ const COMPANY = {
+  name:    orgRow?.company_name    || '',
+  address: orgRow?.company_address || '',
+  city:    orgRow?.company_city    || '',
+  phone:   orgRow?.company_phone   || '',
+  gst:     orgRow?.gst_number      || '',
+  logo:    orgRow?.company_logo_url || '/icon.png',
+}
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
   const pw = doc.internal.pageSize.getWidth()
