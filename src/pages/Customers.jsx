@@ -35,7 +35,7 @@ export default function Customers() {
       .from('customers')
       .select('*')
       .eq('org_id', activeOrg.orgId)
-      .order('created_at', { ascending: false })
+      .order('name', { ascending: true })
     setCustomers(data || [])
   }
 
