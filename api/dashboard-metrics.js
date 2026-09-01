@@ -78,20 +78,32 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to load invoice data' })
   }
 
-  // Compute overdue flag server-side so the connector doesn't need to
-  // duplicate "what counts as overdue" business logic, and so this
-  // definition stays consistent if it's ever needed elsewhere.
+  // Compute overdue flag + aging bucket server-side so the connector
+  // doesn't need to duplicate this business logic, and so the definition
+  // stays consistent everywhere it's used.
   const today = new Date().toISOString().slice(0, 10)
-  const withOverdueFlag = (invoices || []).map(inv => ({
-    ...inv,
-    is_overdue: Boolean(
-      inv.due_date &&
-      inv.due_date <= today &&
-      OVERDUE_ELIGIBLE_STATUSES.includes(inv.status)
-    ),
-  }))
+  const withOverdueFlag = (invoices || []).map(inv => {
+    const isEligible = OVERDUE_ELIGIBLE_STATUSES.includes(inv.status)
+    const daysOverdue = inv.due_date
+      ? Math.floor((new Date(today) - new Date(inv.due_date)) / 86400000)
+      : null
+
+    let aging_bucket = null
+    if (isEligible && daysOverdue !== null && daysOverdue >= 0) {
+      if (daysOverdue <= 30) aging_bucket = '0-30'
+      else if (daysOverdue <= 60) aging_bucket = '31-60'
+      else if (daysOverdue <= 90) aging_bucket = '61-90'
+      else aging_bucket = '90+'
+    }
+
+    return {
+      ...inv,
+      is_overdue: Boolean(inv.due_date && inv.due_date <= today && isEligible),
+      aging_bucket,
+    }
+  })
 
   return res.status(200).json({
     invoices: withOverdueFlag,
   })
-} 
+}
