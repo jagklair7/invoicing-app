@@ -35,6 +35,11 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// An invoice is "overdue" when it's been sent (not a draft, not void, not
+// already paid) and its due date has passed. Draft invoices were never sent
+// so they carry no payment risk; Void invoices are cancelled.
+const OVERDUE_ELIGIBLE_STATUSES = ['sent']
+
 export default async function handler(req, res) {
   const allowedOrigin = process.env.DASHBOARD_ALLOWED_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin)
@@ -64,7 +69,7 @@ export default async function handler(req, res) {
 
   const { data: invoices, error } = await supabaseAdmin
     .from('invoices')
-    .select('date, total, status, number')
+    .select('date, due_date, total, status, number')
     .eq('org_id', org_id)
     .order('date', { ascending: true })
 
@@ -73,7 +78,20 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to load invoice data' })
   }
 
+  // Compute overdue flag server-side so the connector doesn't need to
+  // duplicate "what counts as overdue" business logic, and so this
+  // definition stays consistent if it's ever needed elsewhere.
+  const today = new Date().toISOString().slice(0, 10)
+  const withOverdueFlag = (invoices || []).map(inv => ({
+    ...inv,
+    is_overdue: Boolean(
+      inv.due_date &&
+      inv.due_date <= today &&
+      OVERDUE_ELIGIBLE_STATUSES.includes(inv.status)
+    ),
+  }))
+
   return res.status(200).json({
-    invoices: invoices || [],
+    invoices: withOverdueFlag,
   })
-}
+} 
