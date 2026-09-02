@@ -24,7 +24,7 @@ import AdminPanel        from './pages/admin/AdminPanel.jsx'
 import GlobalAnalytics   from './pages/admin/GlobalAnalytics.jsx'
 import Organizations     from './pages/admin/Organizations.jsx'
 import SeedPlans         from './pages/admin/SeedPlans.jsx'
-import { OrgProvider, useOrg } from './context/OrgContext'
+import { useOrg } from './context/OrgContext'
 import OrgSwitcher       from './components/OrgSwitcher.jsx'
 import Estimates         from './pages/Estimates.jsx'
 import EstimateForm      from './pages/EstimateForm.jsx'
@@ -92,8 +92,21 @@ export default function App() {
     </div>
   )
 
+    // NOTE: OrgProvider is intentionally NOT rendered here — it's already
+    // provided once, at the top level, in main.jsx (wrapping <App />).
+    // Rendering it again here created a second, independent OrgProvider
+    // instance nested inside the first. Since React context resolves to
+    // the nearest ancestor provider, every useOrg() call in this file was
+    // silently reading from THIS inner instance, not the outer one — so
+    // there were two separate loadOrgs() calls and two separate
+    // supabase.auth.onAuthStateChange subscriptions running independently,
+    // racing each other. That race was the source of the intermittent
+    // "Welcome / Create Organization" screen: OrgGuard occasionally saw
+    // `loading: false, orgs: []` for a moment before the real membership
+    // data arrived, triggered a one-way redirect to /onboarding, and
+    // nothing ever re-checked to route back once the real data loaded.
     return (
-    <OrgProvider>
+    <>
       <Routes>
         {/* ── Fully public, no Layout/shell at all ──────────────────── */}
         <Route path="/q/:token" element={<QuotePublic />} />
@@ -195,6 +208,6 @@ export default function App() {
           </Layout>
         } />
       </Routes>
-    </OrgProvider>
+    </>
   )
 }
