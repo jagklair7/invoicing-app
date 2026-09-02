@@ -176,7 +176,7 @@ function NavItem({ to, label, icon, end }) {
 }
 
 // ── Main Layout ───────────────────────────────────────────────────────────────
-export default function Layout({ children }) {
+export default function Layout({ children, session }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { orgs, activeOrg, switchOrg, isSuperAdmin, loading: orgLoading } = useOrg()
@@ -185,6 +185,13 @@ export default function Layout({ children }) {
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/login')
+  }
+
+  // If the user is signed out, let the route-level redirects own the UI.
+  // Otherwise the no-org fallback below could render the welcome card on a
+  // logged-out visit to the root URL instead of the login screen.
+  if (!session) {
+    return <>{children}</>
   }
 
   // ── Loading ───────────────────────────────────────────────────────────────
