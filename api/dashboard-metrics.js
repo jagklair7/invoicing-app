@@ -1,9 +1,14 @@
 // api/dashboard-metrics.js
 //
 // Read-only reporting endpoint for the Klair Dashboards app. Returns
-// aggregated invoice data for one org. Deliberately narrow: no customer PII
-// beyond an ID, no payment/card details even though those columns exist on
-// `invoices` — only what a BI dashboard actually needs.
+// aggregated invoice AND payment data for one org. Deliberately narrow: no
+// customer PII beyond an ID/name, no card details even though those
+// columns exist on `invoices` — only what a BI dashboard actually needs.
+//
+// PAYMENTS: two sources, never overlapping per invoice (confirmed: an
+// invoice is either paid manually via invoice_payments, or via Helcim
+// card processing which sets invoices.paid_at directly — never both).
+// So cash-basis revenue is the union of both with no dedup needed.
 //
 // AUTH: single shared secret via `Authorization: Bearer {key}`, checked
 // against process.env.DASHBOARD_API_KEY. This is fine while it's only your
@@ -46,8 +51,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
 
-  // Browsers send an OPTIONS preflight before any request carrying an
-  // Authorization header — has to succeed before the real GET is even sent.
   if (req.method === 'OPTIONS') {
     return res.status(204).end()
   }
@@ -67,20 +70,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing org_id query param' })
   }
 
-  const { data: invoices, error } = await supabaseAdmin
+  const { data: invoices, error: invoicesError } = await supabaseAdmin
     .from('invoices')
-    .select('date, due_date, total, status, number')
+    .select('date, due_date, total, status, number, customer_id, paid_at, customers(name)')
     .eq('org_id', org_id)
     .order('date', { ascending: true })
 
-  if (error) {
-    console.error('dashboard-metrics query failed:', error.message)
+  if (invoicesError) {
+    console.error('dashboard-metrics invoices query failed:', invoicesError.message)
     return res.status(500).json({ error: 'Failed to load invoice data' })
   }
 
-  // Compute overdue flag + aging bucket server-side so the connector
-  // doesn't need to duplicate this business logic, and so the definition
-  // stays consistent everywhere it's used.
+  // Manual payments (e-transfer, cheque, cash, etc.)
+  const { data: manualPayments, error: paymentsError } = await supabaseAdmin
+    .from('invoice_payments')
+    .select('amount, payment_date, invoice_id')
+    .eq('org_id', org_id)
+    .order('payment_date', { ascending: true })
+
+  if (paymentsError) {
+    console.error('dashboard-metrics payments query failed:', paymentsError.message)
+    return res.status(500).json({ error: 'Failed to load payment data' })
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   const withOverdueFlag = (invoices || []).map(inv => {
     const isEligible = OVERDUE_ELIGIBLE_STATUSES.includes(inv.status)
@@ -97,13 +109,38 @@ export default async function handler(req, res) {
     }
 
     return {
-      ...inv,
+      date: inv.date,
+      due_date: inv.due_date,
+      total: inv.total,
+      status: inv.status,
+      number: inv.number,
+      customer_id: inv.customer_id,
+      customer_name: inv.customers?.name ?? null,
       is_overdue: Boolean(inv.due_date && inv.due_date <= today && isEligible),
       aging_bucket,
     }
   })
 
+  // Card payments (Helcim): invoices.paid_at set directly, no
+  // invoice_payments row. amount = the invoice's total, since Helcim
+  // processes the full invoice amount (no partial-payment path via card
+  // currently exists in this system).
+  const cardPayments = (invoices || [])
+    .filter(inv => inv.paid_at)
+    .map(inv => ({
+      amount: inv.total,
+      paid_at: inv.paid_at.slice(0, 10),
+      invoice_id: null,
+    }))
+
+  const manualPaymentsNormalized = (manualPayments || []).map(p => ({
+    amount: p.amount,
+    paid_at: p.payment_date,
+    invoice_id: p.invoice_id,
+  }))
+
   return res.status(200).json({
     invoices: withOverdueFlag,
+    payments: [...manualPaymentsNormalized, ...cardPayments],
   })
 }
