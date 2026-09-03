@@ -6,6 +6,17 @@ import { useOrg } from '../context/OrgContext'
 import { checkCanCreateInvoice } from '../utils/planLimits'
 import SuspendedBanner from '../components/SuspendedBanner'
 
+// ASSUMPTION: default payment terms not found elsewhere in this file or in
+// stored project notes — defaulting to Net 30. Adjust DEFAULT_TERMS_DAYS if
+// Klair's actual standard terms differ.
+const DEFAULT_TERMS_DAYS = 30
+
+function addDays(dateStr, days) {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
 export default function InvoiceForm() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -16,13 +27,18 @@ export default function InvoiceForm() {
   const [customers, setCustomers] = useState([])
   const [products, setProducts]   = useState([])
   const [saving, setSaving]       = useState(false)
-  const [invoice, setInvoice]     = useState({
-    customer_id: '',
-    number: '',
-    date: new Date().toISOString().split('T')[0],
-    due_date: '',
-    status: 'draft',
-    notes: '',
+  const [invoice, setInvoice]     = useState(() => {
+    const today = new Date().toISOString().split('T')[0]
+    return {
+      customer_id: '',
+      number: '',
+      date: today,
+      // Pre-filled (not blank) so the native date input's auto-advance
+      // behavior matches Issue Date. Was previously ''.
+      due_date: addDays(today, DEFAULT_TERMS_DAYS),
+      status: 'draft',
+      notes: '',
+    }
   })
   const [items, setItems] = useState([{ product_id: '', name: '', quantity: 1, unit_price: 0 }])
 
@@ -240,9 +256,10 @@ function handleProductSelect(idx, productId) {
         ))}
       </select>
 
-      <input
+      <textarea
         placeholder="Description / detail"
-        className="p-2 border rounded-lg text-sm w-full"
+        className="p-2 border rounded-lg text-sm w-full resize-none"
+        rows={2}
         value={item.name}
         onChange={e => updateItem(idx, 'name', e.target.value)}
       />
