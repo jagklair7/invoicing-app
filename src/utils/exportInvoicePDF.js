@@ -3,8 +3,9 @@
 // No html2canvas — draws everything as real PDF text/shapes so it's sharp at any zoom.
 //
 // Install:  npm install jspdf
-// Usage:    import { exportInvoicePDF } from '../utils/exportInvoicePDF'
+// Usage:    import { exportInvoicePDF, exportBatchInvoicesPDF } from '../utils/exportInvoicePDF'
 //           await exportInvoicePDF(invoice, customer, items, orgId)
+//           await exportBatchInvoicesPDF([{ invoice, customer }, ...], orgId, 'Ayre & Oxford')
 import { calcLineTotal, calcLineDiscount } from './discount'
 import { jsPDF } from 'jspdf'
 import { supabase } from '../app/supabaseClient' // Make sure this path is correct
@@ -53,8 +54,39 @@ function loadImage(src) {
   })
 }
 
-// ── Main export function ──────────────────────────────────────────────────────
-export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
+// ── Shared data fetches ─────────────────────────────────────────────────────
+
+// Org-level billing info + product name lookup — same for every invoice in
+// a given org, so batch export fetches this once instead of per invoice.
+async function fetchOrgBillingContext(orgId) {
+  const { data: orgRow } = await supabase
+    .from('organization_settings')
+    .select('company_name, company_address, company_city, company_phone, gst_number, company_logo_url')
+    .eq('org_id', orgId)
+    .single()
+
+  const COMPANY = {
+    name:    orgRow?.company_name    || '',
+    address: orgRow?.company_address || '',
+    city:    orgRow?.company_city    || '',
+    phone:   orgRow?.company_phone   || '',
+    gst:     orgRow?.gst_number      || '',
+    logo:    orgRow?.company_logo_url || '/icon.png',
+  }
+
+  const { data: productList } = await supabase
+    .from('products')
+    .select('id, name')
+    .eq('org_id', orgId)
+
+  const productMap = new Map((productList || []).map(p => [p.id, p.name]))
+
+  return { COMPANY, productMap }
+}
+
+// Per-invoice data: line items, payments, and the management company (if
+// this customer is a property billed care-of one).
+async function fetchInvoiceRenderData(invoice, customer, items, orgId) {
   if ((!items || items.length === 0) && invoice?.id) {
     const { data: fetchedItems, error: itemsErr } = await supabase
       .from('invoice_items')
@@ -67,7 +99,6 @@ export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
     }
   }
 
-  // ── Fetch recorded payments (mirrors PaymentsSection.jsx query) ────────────
   let payments = []
   if (invoice?.id) {
     const { data: paymentRows, error: paymentsErr } = await supabase
@@ -82,41 +113,24 @@ export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
     }
   }
 
-  const { data: orgRow } = await supabase
-    .from('organization_settings')
-    .select('company_name, company_address, company_city, company_phone, gst_number, company_logo_url')
-    .eq('org_id', orgId)
-    .single()
+  let parentCustomer = null
+  if (customer?.parent_customer_id) {
+    const { data: parentRow } = await supabase
+      .from('customers')
+      .select('name, address, city, province, postal_code')
+      .eq('id', customer.parent_customer_id)
+      .single()
+    parentCustomer = parentRow || null
+  }
 
- /* const COMPANY = {
-    name:    orgRow?.company_name    || 'Klair Computer Inc.',
-    address: orgRow?.company_address || '1319 Malone Place NW',
-    city:    orgRow?.company_city    || 'Edmonton, AB T6R 0G6',
-    phone:   orgRow?.company_phone   || '780-265-0042',
-    gst:     orgRow?.gst_number      || '831146329',
-    logo:    orgRow?.company_logo_url || '/icon.png',
-  } */
-
-  const COMPANY = {
-  name:    orgRow?.company_name    || '',
-  address: orgRow?.company_address || '',
-  city:    orgRow?.company_city    || '',
-  phone:   orgRow?.company_phone   || '',
-  gst:     orgRow?.gst_number      || '',
-  logo:    orgRow?.company_logo_url || '/icon.png',
+  return { items, payments, parentCustomer }
 }
 
-  const { data: productList } = await supabase
-    .from('products')
-    .select('id, name')
-    .eq('org_id', orgId)
-
-  const productMap = new Map((productList || []).map(p => [p.id, p.name]))
-
-  // 2. INITIALIZE DOC FIRST TO AVOID CORS ISSUES WITH LOGO LOADING
-  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-
-  // 3. NOW you can access doc.internal dimensions
+// ── Page renderer ────────────────────────────────────────────────────────────
+// Draws one invoice onto the doc's CURRENT page. Caller is responsible for
+// calling doc.addPage() beforehand if this isn't the first page. Does not
+// save or return anything — used by both the single and batch exporters.
+async function drawInvoicePage(doc, invoice, customer, { items, payments, parentCustomer }, COMPANY, productMap) {
   const pw   = doc.internal.pageSize.getWidth()   // 210
   const ph   = doc.internal.pageSize.getHeight()  // 297
   const ml   = 18   // margin left
@@ -204,19 +218,49 @@ export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   setColor(doc, C.muted)
-  if (customer?.email)   { ry += 4.5; doc.text(customer.email, (ml + cw * 0.42), ry) }
-  if (customer?.phone)   { ry += 4;   doc.text(customer.phone, (ml + cw * 0.42), ry) }
-  if (customer?.address) { ry += 4;   doc.text(customer.address, (ml + cw * 0.42), ry) }
 
-  const cityLine = [
-    customer?.city,
-    customer?.province,
-    customer?.postal_code
-  ].filter(Boolean).join(', ')
+  if (parentCustomer) {
+    // This customer is a property billed care-of a management company:
+    // show the property's own address, then a "c/o {management company}"
+    // line with the management company's mailing address — matches the
+    // paper invoice format (e.g. "Studio Ed ... / c/o Ayre & Oxford / #501,
+    // 4730 Gateway Blvd...").
+    if (customer?.address) { ry += 4.5; doc.text(customer.address, (ml + cw * 0.42), ry) }
 
-  if (cityLine) {
-    ry += 4;
-    doc.text(cityLine, (ml + cw * 0.42), ry)
+    const propertyCityLine = [
+      customer?.city,
+      customer?.province,
+      customer?.postal_code
+    ].filter(Boolean).join(', ')
+    if (propertyCityLine) { ry += 4; doc.text(propertyCityLine, (ml + cw * 0.42), ry) }
+
+    ry += 4.5
+    doc.text(`c/o ${parentCustomer.name}`, (ml + cw * 0.42), ry)
+
+    if (parentCustomer.address) { ry += 4; doc.text(parentCustomer.address, (ml + cw * 0.42), ry) }
+
+    const parentCityLine = [
+      parentCustomer.city,
+      parentCustomer.province,
+      parentCustomer.postal_code
+    ].filter(Boolean).join(', ')
+    if (parentCityLine) { ry += 4; doc.text(parentCityLine, (ml + cw * 0.42), ry) }
+  } else {
+    // Unchanged from before — no management company on this customer.
+    if (customer?.email)   { ry += 4.5; doc.text(customer.email, (ml + cw * 0.42), ry) }
+    if (customer?.phone)   { ry += 4;   doc.text(customer.phone, (ml + cw * 0.42), ry) }
+    if (customer?.address) { ry += 4;   doc.text(customer.address, (ml + cw * 0.42), ry) }
+
+    const cityLine = [
+      customer?.city,
+      customer?.province,
+      customer?.postal_code
+    ].filter(Boolean).join(', ')
+
+    if (cityLine) {
+      ry += 4;
+      doc.text(cityLine, (ml + cw * 0.42), ry)
+    }
   }
 
   const col3x = pw - mr
@@ -543,9 +587,42 @@ export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
   doc.text('Thank you for your business.', pw / 2, footerY + 5, { align: 'center' })
 
   doc.text(COMPANY.name + '  ·  ' + COMPANY.phone, pw / 2, footerY + 9.5, { align: 'center' })
+}
 
-  // ── 8. Save ────────────────────────────────────────────────────────────────
+// ── Public exports ───────────────────────────────────────────────────────────
+
+// Single-invoice export — unchanged behavior/signature from before.
+export async function exportInvoicePDF(invoice, customer, items = [], orgId) {
+  const { COMPANY, productMap } = await fetchOrgBillingContext(orgId)
+  const data = await fetchInvoiceRenderData(invoice, customer, items, orgId)
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+  await drawInvoicePage(doc, invoice, customer, data, COMPANY, productMap)
+
   const filename = `${invoice.number || 'invoice'}-${customer?.name?.replace(/\s+/g, '-') || 'invoice'}.pdf`
+  doc.save(filename)
+  const pdfBase64 = doc.output('datauristring')
+  return { pdfBase64, filename }
+}
+
+// Batch export — one combined PDF with every selected invoice as its own
+// page(s), in the order given. `entries` is [{ invoice, customer, items? }].
+// Use this for "export all of Ayre & Oxford's property invoices as one file".
+export async function exportBatchInvoicesPDF(entries, orgId, batchLabel = 'Invoices') {
+  if (!entries || entries.length === 0) return null
+
+  const { COMPANY, productMap } = await fetchOrgBillingContext(orgId)
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+
+  for (let i = 0; i < entries.length; i++) {
+    const { invoice, customer, items = [] } = entries[i]
+    if (i > 0) doc.addPage()
+    const data = await fetchInvoiceRenderData(invoice, customer, items, orgId)
+    await drawInvoicePage(doc, invoice, customer, data, COMPANY, productMap)
+  }
+
+  const safeLabel = (batchLabel || 'Invoices').replace(/[^\w-]+/g, '-')
+  const filename = `${safeLabel}-Invoices-${new Date().toISOString().split('T')[0]}.pdf`
   doc.save(filename)
   const pdfBase64 = doc.output('datauristring')
   return { pdfBase64, filename }

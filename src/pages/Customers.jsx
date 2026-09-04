@@ -4,14 +4,17 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
 import SuspendedBanner from '../components/SuspendedBanner'
+import BatchExportModal from '../components/BatchExportModal'
 
 export default function Customers() {
   const { activeOrg, isSuspended } = useOrg()
   const [customers, setCustomers] = useState([])
   const [editingId, setEditingId] = useState(null)
+  const [exportingFor, setExportingFor] = useState(null)
   const [formData, setFormData] = useState({
     name: '', contact_person: '', email: '', phone: '', address: '',
-    city: '', province: 'AB', postal_code: '', country: 'Canada'
+    city: '', province: 'AB', postal_code: '', country: 'Canada',
+    parent_customer_id: ''
   })
   const navigate = useNavigate()
 
@@ -50,7 +53,11 @@ export default function Customers() {
     e.preventDefault()
     if (!formData.name.trim() || !activeOrg?.orgId) return
 
-    const payload = { ...formData, org_id: activeOrg.orgId }
+    const payload = {
+      ...formData,
+      org_id: activeOrg.orgId,
+      parent_customer_id: formData.parent_customer_id || null,
+    }
 
     if (editingId) {
       const { error } = await supabase.from('customers').update(payload).eq('id', editingId)
@@ -61,7 +68,7 @@ export default function Customers() {
     }
 
     setEditingId(null)
-    setFormData({ name: '', contact_person: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada' })
+    setFormData({ name: '', contact_person: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada', parent_customer_id: '' })
     fetchCustomers()
   }
 
@@ -70,17 +77,31 @@ export default function Customers() {
     setFormData({
       name: c.name, contact_person: c.contact_person || '', email: c.email || '', phone: c.phone || '',
       address: c.address || '', city: c.city || '',
-      province: c.province || 'AB', postal_code: c.postal_code || '', country: c.country || 'Canada'
+      province: c.province || 'AB', postal_code: c.postal_code || '', country: c.country || 'Canada',
+      parent_customer_id: c.parent_customer_id || ''
     })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const cancelEdit = () => {
     setEditingId(null)
-    setFormData({ name: '', contact_person: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada' })
+    setFormData({ name: '', contact_person: '', email: '', phone: '', address: '', city: '', province: 'AB', postal_code: '', country: 'Canada', parent_customer_id: '' })
   }
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value })
+
+  // Management companies you can assign a property to: any customer that
+  // isn't itself a property (single-level hierarchy — a management company
+  // can't also be a property), and not the record currently being edited.
+  const managementCompanyOptions = customers.filter(
+    c => !c.parent_customer_id && c.id !== editingId
+  )
+
+  const getParentName = (parentId) =>
+    customers.find(c => c.id === parentId)?.name
+
+  const hasProperties = (customerId) =>
+    customers.some(c => c.parent_customer_id === customerId)
 
   return (
     <div className="max-w-6xl mx-auto p-4">
@@ -134,6 +155,23 @@ export default function Customers() {
               <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Country</label>
               <input name="country" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none" value={formData.country} onChange={handleChange} placeholder="Canada" />
             </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Management Company</label>
+              <select
+                name="parent_customer_id"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 outline-none"
+                value={formData.parent_customer_id}
+                onChange={handleChange}
+              >
+                <option value="">— None (this is not a property) —</option>
+                {managementCompanyOptions.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Set this if {formData.name || 'this customer'} is a property billed under a management company (e.g. "c/o Ayre &amp; Oxford").
+              </p>
+            </div>
           </div>
           <div className="flex gap-3">
             <button type="submit" className="bg-teal-700 text-white px-8 py-3 rounded-lg font-bold hover:bg-teal-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
@@ -153,6 +191,7 @@ export default function Customers() {
           <thead className="bg-gray-50 border-b">
             <tr>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Customer</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Management Company</th>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Contact Person</th>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Email</th>
               <th className="px-6 py-4 text-xs font-bold uppercase text-gray-500">Phone</th>
@@ -161,10 +200,11 @@ export default function Customers() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {customers.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-400 text-sm">No customers yet for {activeOrg?.name}.</td></tr>
+              <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-400 text-sm">No customers yet for {activeOrg?.name}.</td></tr>
             ) : customers.map(c => (
               <tr key={c.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 font-semibold text-gray-900">{c.name}</td>
+                <td className="px-6 py-4 text-gray-500 text-sm">{getParentName(c.parent_customer_id) || '—'}</td>
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.contact_person || '—'}</td>
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.email || '—'}</td>
                 <td className="px-6 py-4 text-gray-500 text-sm">{c.phone || '—'}</td>
@@ -172,12 +212,19 @@ export default function Customers() {
                   <button onClick={() => startEdit(c)} disabled={isSuspended} className="text-blue-600 hover:underline font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
                   <button onClick={() => deleteCustomer(c.id)} disabled={isSuspended} className="text-red-500 hover:underline font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed">Delete</button>
                   <button onClick={() => navigate(`/customers/${c.id}/statement`)} className="text-teal-600 hover:underline font-medium text-sm">Statement</button>
+                  {hasProperties(c.id) && (
+                    <button onClick={() => setExportingFor(c)} className="text-teal-600 hover:underline font-medium text-sm">Export Invoices</button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {exportingFor && (
+        <BatchExportModal managementCompany={exportingFor} onClose={() => setExportingFor(null)} />
+      )}
     </div>
   )
 }
