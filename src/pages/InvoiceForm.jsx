@@ -6,6 +6,7 @@ import { useOrg } from '../context/OrgContext'
 import { checkCanCreateInvoice } from '../utils/planLimits'
 import SuspendedBanner from '../components/SuspendedBanner'
 import DateInput from '../components/DateInput'
+import RichTextNotes from '../components/RichTextNotes'
 
 // ASSUMPTION: default payment terms not found elsewhere in this file or in
 // stored project notes — defaulting to Net 30. Adjust DEFAULT_TERMS_DAYS if
@@ -309,12 +310,10 @@ function handleProductSelect(idx, productId) {
       {/* Notes */}
       <div className="bg-white p-6 rounded-2xl border">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Notes</h3>
-        <textarea
-          className="w-full p-3 border rounded-lg text-sm resize-vertical"
-          rows={4}
-          placeholder="Payment terms, bank details, thank you note..."
+        <RichTextNotes
           value={invoice.notes}
-          onChange={e => setInvoice({ ...invoice, notes: e.target.value })}
+          onChange={html => setInvoice({ ...invoice, notes: html })}
+          placeholder="Payment terms, bank details, thank you note..."
         />
       </div>
 

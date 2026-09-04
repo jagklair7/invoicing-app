@@ -54,6 +54,67 @@ function loadImage(src) {
   })
 }
 
+// Parses "rgb(r, g, b)" or "#rrggbb"/"#rgb" into a [r,g,b] array for jsPDF.
+// Returns null if the string can't be parsed (falls back to default text color).
+function parseColor(str) {
+  if (!str) return null
+  const rgbMatch = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+  if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])]
+  const hexMatch = str.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (hexMatch) {
+    let hex = hexMatch[1]
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('')
+    const num = parseInt(hex, 16)
+    return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
+  }
+  return null
+}
+
+// Parses the rich-text Notes HTML (produced by RichTextNotes.jsx) into
+// paragraphs of styled runs: [{ text, bold, italic, color }]. Falls back
+// gracefully on plain, un-tagged text (older invoices saved before this
+// feature existed) — that just becomes a single unstyled run.
+function parseNotesHtml(html) {
+  const parsed = new DOMParser().parseFromString(html || '', 'text/html')
+  const paragraphs = []
+  let current = []
+
+  function walk(node, style) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) current.push({ text: node.textContent, ...style })
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return
+
+    const tag = node.tagName.toLowerCase()
+    if (tag === 'br') {
+      paragraphs.push(current)
+      current = []
+      return
+    }
+
+    const nextStyle = { ...style }
+    if (tag === 'b' || tag === 'strong') nextStyle.bold = true
+    if (tag === 'i' || tag === 'em') nextStyle.italic = true
+    if (tag === 'span' && node.style && node.style.color) {
+      const parsedColor = parseColor(node.style.color)
+      if (parsedColor) nextStyle.color = parsedColor
+    }
+
+    node.childNodes.forEach(child => walk(child, nextStyle))
+
+    if (tag === 'div' || tag === 'p') {
+      paragraphs.push(current)
+      current = []
+    }
+  }
+
+  parsed.body.childNodes.forEach(n => walk(n, { bold: false, italic: false, color: null }))
+  if (current.length) paragraphs.push(current)
+
+  return paragraphs
+}
+
 // ── Shared data fetches ─────────────────────────────────────────────────────
 
 // Org-level billing info + product name lookup — same for every invoice in
@@ -548,6 +609,11 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
   }
 
   // ── 6. Notes ────────────────────────────────────────────────────────────────
+  // Notes are stored as sanitized HTML (bold/italic/color spans only — see
+  // RichTextNotes.jsx). We can't hand HTML to jsPDF directly, so we parse it
+  // into styled runs and manually word-wrap, switching font style/color per
+  // word as needed. Plain, un-tagged text (older invoices) renders exactly
+  // as it did before.
   if (invoice.notes && invoice.notes.trim() !== '') {
     y += 6
 
@@ -563,16 +629,53 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
 
     y += 4
 
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.5)
-    setColor(doc, C.muted)
-
     const maxWidth = pw - ml - mr
-    const lines = doc.splitTextToSize(invoice.notes, maxWidth)
+    const lineHeight = 4.2
+    const paragraphs = parseNotesHtml(invoice.notes)
 
-    doc.text(lines, ml, y)
+    paragraphs.forEach((runs) => {
+      if (y + lineHeight > ph - 20) {
+        doc.addPage()
+        y = 20
+      }
 
-    y += lines.length * 4
+      if (runs.length === 0) {
+        // Blank line (user pressed Enter on an empty line)
+        y += lineHeight
+        return
+      }
+
+      let x = ml
+      runs.forEach((run) => {
+        const style = run.bold && run.italic ? 'bolditalic' : run.bold ? 'bold' : run.italic ? 'italic' : 'normal'
+        doc.setFont('helvetica', style)
+        doc.setFontSize(8.5)
+        setColor(doc, run.color || C.muted)
+
+        // Split into tokens, keeping whitespace as its own token so word
+        // boundaries and spacing survive the wrap.
+        const tokens = run.text.split(/(\s+)/).filter(t => t !== '')
+        tokens.forEach((token) => {
+          const w = doc.getTextWidth(token)
+          if (/^\s+$/.test(token)) {
+            x += w
+            return
+          }
+          if (x + w > ml + maxWidth) {
+            x = ml
+            y += lineHeight
+            if (y + lineHeight > ph - 20) {
+              doc.addPage()
+              y = 20
+            }
+          }
+          doc.text(token, x, y)
+          x += w
+        })
+      })
+
+      y += lineHeight
+    })
   }
 
   // ── 7. Footer ──────────────────────────────────────────────────────────────
