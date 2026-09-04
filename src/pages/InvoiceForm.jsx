@@ -5,6 +5,7 @@ import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { checkCanCreateInvoice } from '../utils/planLimits'
 import SuspendedBanner from '../components/SuspendedBanner'
+import DateInput from '../components/DateInput'
 
 // ASSUMPTION: default payment terms not found elsewhere in this file or in
 // stored project notes — defaulting to Net 30. Adjust DEFAULT_TERMS_DAYS if
@@ -33,8 +34,6 @@ export default function InvoiceForm() {
       customer_id: '',
       number: '',
       date: today,
-      // Pre-filled (not blank) so the native date input's auto-advance
-      // behavior matches Issue Date. Was previously ''.
       due_date: addDays(today, DEFAULT_TERMS_DAYS),
       status: 'draft',
       notes: '',
@@ -210,13 +209,11 @@ function handleProductSelect(idx, productId) {
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Issue Date *</label>
-          <input required type="date" className="w-full p-2 border rounded-lg text-sm" value={invoice.date}
-            onChange={e => setInvoice({ ...invoice, date: e.target.value })} />
+          <DateInput required value={invoice.date} onChange={v => setInvoice({ ...invoice, date: v })} />
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Due Date</label>
-          <input type="date" className="w-full p-2 border rounded-lg text-sm" value={invoice.due_date}
-            onChange={e => setInvoice({ ...invoice, due_date: e.target.value })} />
+          <DateInput value={invoice.due_date} onChange={v => setInvoice({ ...invoice, due_date: v })} />
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Status</label>
