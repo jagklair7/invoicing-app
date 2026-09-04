@@ -13,6 +13,10 @@ function pad(n, len) {
   return String(n).padStart(len, '0')
 }
 
+function clamp(n, min, max) {
+  return Math.min(Math.max(n, min), max)
+}
+
 function parseIso(iso) {
   if (!iso) return { y: '', m: '', d: '' }
   const [y, m, d] = iso.split('-')
@@ -27,15 +31,24 @@ export default function DateInput({ value, onChange, required = false, className
 
   // Stay in sync if the parent updates value externally
   // (e.g. draft restore from localStorage, or a computed default).
+  // This only fires when the parent's value actually changes, which only
+  // happens once a full date has been emitted below — so it never clobbers
+  // a field the user is still mid-typing.
   useEffect(() => {
     setParts(parseIso(value))
   }, [value])
 
-  function emit(next) {
+  // Only pushes a value up (and pads) once year/month/day all have their
+  // full digit count, unless `force` is set (used on blur to finalize a
+  // single leftover digit, e.g. "3" -> "03").
+  function emit(next, { force = false } = {}) {
     const { y, m, d } = next
-    if (y.length === 4 && m.length > 0 && d.length > 0) {
-      const mm = pad(Math.min(Math.max(parseInt(m, 10) || 1, 1), 12), 2)
-      const dd = pad(Math.min(Math.max(parseInt(d, 10) || 1, 1), 31), 2)
+    const yComplete = y.length === 4
+    const mComplete = force ? m.length > 0 : m.length === 2
+    const dComplete = force ? d.length > 0 : d.length === 2
+    if (yComplete && mComplete && dComplete) {
+      const mm = pad(clamp(parseInt(m, 10) || 1, 1, 12), 2)
+      const dd = pad(clamp(parseInt(d, 10) || 1, 1, 31), 2)
       onChange(`${y}-${mm}-${dd}`)
     } else if (y === '' && m === '' && d === '') {
       onChange('')
@@ -72,6 +85,15 @@ export default function DateInput({ value, onChange, required = false, className
     if (e.key === 'Backspace' && parts.d === '') monthRef.current?.focus()
   }
 
+  // Finalize a lone leftover digit if the user tabs/clicks away
+  // before typing a second one (e.g. types "3" for day, then blurs).
+  function handleMonthBlur() {
+    if (parts.m.length === 1) emit(parts, { force: true })
+  }
+  function handleDayBlur() {
+    if (parts.d.length === 1) emit(parts, { force: true })
+  }
+
   return (
     <div className={`flex items-center gap-1 p-2 border rounded-lg text-sm bg-white ${className}`}>
       <input
@@ -93,6 +115,7 @@ export default function DateInput({ value, onChange, required = false, className
         value={parts.m}
         onChange={handleMonth}
         onKeyDown={handleMonthKeyDown}
+        onBlur={handleMonthBlur}
         className="w-8 outline-none bg-transparent"
       />
       <span className="text-gray-300">-</span>
@@ -104,6 +127,7 @@ export default function DateInput({ value, onChange, required = false, className
         value={parts.d}
         onChange={handleDay}
         onKeyDown={handleDayKeyDown}
+        onBlur={handleDayBlur}
         className="w-8 outline-none bg-transparent"
       />
     </div>
