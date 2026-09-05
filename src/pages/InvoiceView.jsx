@@ -945,40 +945,39 @@ export default function InvoiceView() {
         </div>
       `
 
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invoice`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            to: sendEmail.trim(),
-            subject: `Invoice ${invoice.number} from ${orgSettings?.company_name || activeOrg?.name}`,
-            html,
-            pdfBase64,
-            filename,
-          })
-        }
-      )
+      // Using supabase.functions.invoke() instead of a raw fetch() — it
+      // automatically attaches the correct apikey + Authorization headers
+      // from this client's own configuration/session, avoiding the gateway
+      // auth mismatch a hand-built fetch() call can hit.
+      const { data: result, error: invokeError } = await supabase.functions.invoke('send-invoice', {
+        body: {
+          to: sendEmail.trim(),
+          subject: `Invoice ${invoice.number} from ${orgSettings?.company_name || activeOrg?.name}`,
+          html,
+          pdfBase64,
+          filename,
+        },
+      })
 
-      const result = await res.json()
-      if (!res.ok) {
-        // Your function's own errors are shaped { error: {...} }, but a
-        // rejection from Supabase's gateway itself (e.g. an auth failure
-        // before your code even runs) is shaped differently — commonly
-        // { message: "..." } at the top level. Falling back through both
-        // shapes (and finally the raw status) means this banner is never
-        // blank, whichever layer actually rejected the request.
-        const message =
-          result?.error?.message ||
-          (typeof result?.error === 'string' ? result.error : null) ||
-          result?.message ||
-          (result ? JSON.stringify(result) : null) ||
-          `Request failed with status ${res.status}`
-        throw new Error(message)
+      if (invokeError) {
+        // Prefer the function's own { error } body when available (it's
+        // reachable via invokeError.context, a Response object, on
+        // FunctionsHttpError), falling back to the SDK's own message so
+        // this is never blank.
+        let message = invokeError.message
+        if (typeof invokeError.context?.json === 'function') {
+          try {
+            const body = await invokeError.context.json()
+            message =
+              body?.error?.message ||
+              (typeof body?.error === 'string' ? body.error : null) ||
+              body?.message ||
+              message
+          } catch {
+            // context body wasn't JSON — stick with invokeError.message
+          }
+        }
+        throw new Error(message || 'Failed to send invoice')
       }
 
       if (invoice.status === 'draft') {
