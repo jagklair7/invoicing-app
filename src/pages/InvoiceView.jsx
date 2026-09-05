@@ -685,6 +685,7 @@ const css = `
     width: 100%;
     max-width: 460px;
     overflow: hidden;
+    display: flex;
     flex-direction: column;
     max-height: 90vh;
   }
@@ -694,6 +695,7 @@ const css = `
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
   }
   .inv-modal-title {
     font-family: 'Fraunces', Georgia, serif;
@@ -720,7 +722,8 @@ const css = `
     flex-direction: column;
     gap: 16px;
     overflow-y: auto;
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .inv-modal-footer {
     padding: 16px 24px;
@@ -731,6 +734,7 @@ const css = `
     justify-content: flex-end;
     align-items: center;
     background: #fff;
+    flex-shrink: 0;
   }
   .inv-send-success {
     display: flex;
