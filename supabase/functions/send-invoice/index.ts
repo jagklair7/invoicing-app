@@ -18,7 +18,18 @@ serve(async (req) => {
     const body = await req.json()
     const { to, subject, html, pdfBase64, filename } = body
 
+    console.log('send-invoice: request received', {
+      to,
+      subject,
+      hasPdf: !!pdfBase64,
+      pdfLength: pdfBase64?.length || 0,
+      fromEmail: FROM_EMAIL,
+      resendKeyPresent: !!RESEND_API_KEY,
+      resendKeyPrefix: RESEND_API_KEY ? RESEND_API_KEY.slice(0, 6) : null,
+    })
+
     if (!to || !subject) {
+      console.log('send-invoice: missing to/subject, rejecting')
       return new Response(JSON.stringify({ error: 'Missing to or subject' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -42,6 +53,12 @@ serve(async (req) => {
       ...(attachments.length > 0 && { attachments }),
     }
 
+    console.log('send-invoice: calling Resend', {
+      from: payload.from,
+      to: payload.to,
+      attachmentCount: attachments.length,
+    })
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -53,18 +70,28 @@ serve(async (req) => {
 
     const data = await res.json()
 
+    console.log('send-invoice: Resend responded', {
+      status: res.status,
+      ok: res.ok,
+      data,
+    })
+
     if (!res.ok) {
+      console.error('send-invoice: Resend rejected the request', data)
       return new Response(JSON.stringify({ error: data }), {
         status: res.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
+    console.log('send-invoice: success, Resend id =', data.id)
+
     return new Response(JSON.stringify({ success: true, id: data.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
 
   } catch (err) {
+    console.error('send-invoice: unhandled exception', err.message, err.stack)
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
