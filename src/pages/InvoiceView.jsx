@@ -18,7 +18,12 @@ import RichTextNotes, { sanitizeNotesHtml } from '../components/RichTextNotes'
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
 
-  .inv-root {
+  /* Tokens live on :root, not .inv-root, because the Send/Pay modals are
+     rendered as siblings of .inv-root (not descendants) — custom properties
+     only cascade to descendants, so anything scoped to .inv-root was
+     invisible inside the modals (e.g. .inv-btn--primary's white text on a
+     var(--teal) background that silently resolved to nothing). */
+  :root {
     --teal:      #0d7377;
     --teal-lt:   #e8f5f5;
     --teal-mid:  #14a0a5;
@@ -35,6 +40,9 @@ const css = `
     --radius:    12px;
     --shadow:    0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -1px rgba(0,0,0,0.04);
     --shadow-lg: 0 20px 40px -8px rgba(0,0,0,0.12), 0 8px 16px -4px rgba(0,0,0,0.06);
+  }
+
+  .inv-root {
     font-family: 'DM Sans', system-ui, sans-serif;
     background: var(--bg);
     min-height: 100vh;
