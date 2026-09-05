@@ -655,6 +655,15 @@ const css = `
     .inv-edit-meta { grid-template-columns: 1fr; }
     .inv-edit-meta-right { grid-template-columns: 1fr 1fr; }
     .inv-item-row { grid-template-columns: 1fr 70px 90px 28px; }
+
+    .inv-modal-footer {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+    .inv-modal-footer .inv-btn {
+      width: 100%;
+      justify-content: center;
+    }
   }
 
   /* ── Send modal ── */
@@ -717,6 +726,7 @@ const css = `
     padding: 16px 24px;
     border-top: 1px solid #f1f5f9;
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
     align-items: center;
