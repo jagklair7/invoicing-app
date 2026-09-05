@@ -879,7 +879,7 @@ export default function InvoiceView() {
     setSending(true)
     setSendResult(null)
     try {
-      const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items, activeOrg.orgId)
+      const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items, activeOrg.orgId, { download: false })
 
       const html = `
         <div style="margin:0;padding:0;background:#f1f5f9;">
@@ -965,7 +965,21 @@ export default function InvoiceView() {
       )
 
       const result = await res.json()
-      if (!res.ok) throw new Error(result.error?.message || JSON.stringify(result.error))
+      if (!res.ok) {
+        // Your function's own errors are shaped { error: {...} }, but a
+        // rejection from Supabase's gateway itself (e.g. an auth failure
+        // before your code even runs) is shaped differently — commonly
+        // { message: "..." } at the top level. Falling back through both
+        // shapes (and finally the raw status) means this banner is never
+        // blank, whichever layer actually rejected the request.
+        const message =
+          result?.error?.message ||
+          (typeof result?.error === 'string' ? result.error : null) ||
+          result?.message ||
+          (result ? JSON.stringify(result) : null) ||
+          `Request failed with status ${res.status}`
+        throw new Error(message)
+      }
 
       if (invoice.status === 'draft') {
         await supabase
