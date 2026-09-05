@@ -12,6 +12,7 @@ import PayNowButton from '../components/PayNowButton'
 import PaymentsSection from '../components/PaymentsSection'
 // Add to imports:
 import SuspendedBanner from '../components/SuspendedBanner'
+import RichTextNotes, { sanitizeNotesHtml } from '../components/RichTextNotes'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
@@ -904,6 +905,11 @@ export default function InvoiceView() {
                   <span style="font-size:13px;font-weight:600;color:#1e293b;">${fmtDate(invoice.duedate)}</span>
                 </div>` : ''}
               </div>
+              ${invoice.notes && invoice.notes.trim() !== '' ? `
+              <div style="background:#f8fafc;border-left:4px solid #94a3b8;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
+                <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Invoice notes</div>
+                <div style="font-size:14px;line-height:1.7;color:#334155;">${sanitizeNotesHtml(invoice.notes)}</div>
+              </div>` : ''}
               ${sendNote ? `
               <div style="background:#f8fafc;border-left:4px solid #0d7377;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
                 <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Personal note</div>
@@ -1447,9 +1453,10 @@ export default function InvoiceView() {
                     }}>
                       Notes
                     </div>
-                    <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                      {invoice.notes}
-                    </div>
+                    <div
+                      style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeNotesHtml(invoice.notes) }}
+                    />
                   </div>
                 )}
 
@@ -1621,13 +1628,10 @@ export default function InvoiceView() {
                 <div style={{ marginTop: 20 }}>
                   <div className="inv-field">
                     <label className="inv-field-label">Notes</label>
-                    <textarea
-                      className="inv-input"
-                      rows={4}
-                      placeholder="Payment terms, bank details, thank you note..."
+                    <RichTextNotes
                       value={editNotes}
-                      onChange={(e) => setEditNotes(e.target.value)}
-                      style={{ resize: 'vertical' }}
+                      onChange={setEditNotes}
+                      placeholder="Payment terms, bank details, thank you note..."
                     />
                   </div>
                 </div>

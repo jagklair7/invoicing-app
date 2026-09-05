@@ -18,8 +18,11 @@ const COLORS = [
 
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'SPAN', 'BR', 'DIV', 'P'])
 
-function sanitize(html) {
-  const parsed = new DOMParser().parseFromString(html, 'text/html')
+// Exported so InvoiceView.jsx (and anywhere else rendering saved notes) can
+// re-sanitize before using dangerouslySetInnerHTML — defense in depth in
+// case notes ever arrive from a path other than this editor.
+export function sanitizeNotesHtml(html) {
+  const parsed = new DOMParser().parseFromString(html || '', 'text/html')
 
   function clean(node) {
     Array.from(node.childNodes).forEach((child) => {
@@ -71,7 +74,7 @@ export default function RichTextNotes({ value, onChange, placeholder }) {
 
   function handleInput() {
     if (!ref.current) return
-    onChange(sanitize(ref.current.innerHTML))
+    onChange(sanitizeNotesHtml(ref.current.innerHTML))
   }
 
   return (
