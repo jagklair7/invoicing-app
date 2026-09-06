@@ -10,7 +10,6 @@ import { calcLineTotal, calcLineDiscount } from '../utils/discount'
 import { useOrg } from '../context/OrgContext'
 import PayNowButton from '../components/PayNowButton'
 import PaymentsSection from '../components/PaymentsSection'
-// Add to imports:
 import SuspendedBanner from '../components/SuspendedBanner'
 import RichTextNotes, { sanitizeNotesHtml } from '../components/RichTextNotes'
 
@@ -799,6 +798,7 @@ export default function InvoiceView() {
   const [customer, setCustomer]       = useState(null)
   const [items, setItems]             = useState([])
   const [orgSettings, setOrgSettings] = useState(null)
+  const [orgPlanName, setOrgPlanName] = useState(null)
   const [loading, setLoading]         = useState(true)
   const [isEditing, setIsEditing]     = useState(false)
   const [saving, setSaving]           = useState(false)
@@ -849,6 +849,15 @@ export default function InvoiceView() {
         .eq('org_id', activeOrg.orgId)
         .single()
       setOrgSettings(settings || null)
+
+      // Plan tier drives the "from" branding on sent invoice emails —
+      // see handleSendInvoice / the send-invoice Edge Function.
+      const { data: subscription } = await supabase
+        .from('org_subscriptions')
+        .select('plan:plan_id(name)')
+        .eq('org_id', activeOrg.orgId)
+        .single()
+      setOrgPlanName(subscription?.plan?.name || null)
 
       const { data: productList } = await supabase
         .from('products')
@@ -968,6 +977,8 @@ export default function InvoiceView() {
           html,
           pdfBase64,
           filename,
+          companyName: orgSettings?.company_name || activeOrg?.name,
+          planName: orgPlanName,
         },
       })
 
