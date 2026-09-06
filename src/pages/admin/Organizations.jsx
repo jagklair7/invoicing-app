@@ -159,6 +159,12 @@ const css = `
     font-size: 18px;
     flex-shrink: 0;
   }
+  .orgs-card-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
   .orgs-card-name {
     font-size: 15px;
     font-weight: 600;
@@ -166,6 +172,29 @@ const css = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .orgs-name-edit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 13px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .orgs-name-edit-btn:hover { color: #0d7377; background: #e8f5f5; }
+  .orgs-name-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .orgs-name-edit-row .orgs-input {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 5px 9px;
+    width: 220px;
   }
   .orgs-card-meta {
     font-size: 12px;
@@ -270,6 +299,15 @@ export default function Organizations() {
   const [planUpdating, setPlanUpdating] = useState({})
   const [planMessage, setPlanMessage] = useState({})
 
+  // Inline org name editing — updates organizations.name and
+  // organization_settings.company_name together, since the two are kept
+  // in sync (the switcher/topbar reads the former, invoices/PDFs/emails
+  // read the latter).
+  const [editingNameId, setEditingNameId] = useState(null)
+  const [nameDraft, setNameDraft]         = useState({})
+  const [nameSaving, setNameSaving]       = useState({})
+  const [nameError, setNameError]         = useState({})
+
   // New org form
   const [newOrgName, setNewOrgName]   = useState('')
   const [newOrgEmail, setNewOrgEmail] = useState('')
@@ -373,6 +411,52 @@ export default function Organizations() {
     } else {
       setExpandedId(orgId)
       if (!members[orgId]) fetchMembers(orgId)
+    }
+  }
+
+  function startEditName(org, e) {
+    e.stopPropagation() // don't also toggle the card expand/collapse
+    setEditingNameId(org.id)
+    setNameDraft(prev => ({ ...prev, [org.id]: org.name }))
+    setNameError(prev => ({ ...prev, [org.id]: '' }))
+  }
+
+  function cancelEditName(orgId, e) {
+    e?.stopPropagation()
+    setEditingNameId(null)
+    setNameError(prev => ({ ...prev, [orgId]: '' }))
+  }
+
+  // Updates organizations.name and organization_settings.company_name
+  // together via the rename_organization RPC (SECURITY DEFINER) — a raw
+  // .update() on organizations here would likely be silently blocked by
+  // RLS for anyone but the row's own policies allow, same reason
+  // create_organization/delete_organization already go through RPCs.
+  async function saveOrgName(orgId, e) {
+    e?.stopPropagation()
+    const newName = (nameDraft[orgId] || '').trim()
+    if (!newName) {
+      setNameError(prev => ({ ...prev, [orgId]: 'Name cannot be empty.' }))
+      return
+    }
+
+    setNameSaving(prev => ({ ...prev, [orgId]: true }))
+    setNameError(prev => ({ ...prev, [orgId]: '' }))
+
+    try {
+      const { error: renameErr } = await supabase.rpc('rename_organization', {
+        org_id_input: orgId,
+        new_name: newName,
+      })
+      if (renameErr) throw renameErr
+
+      setEditingNameId(null)
+      await fetchOrgs()
+      await refreshOrgs()
+    } catch (err) {
+      setNameError(prev => ({ ...prev, [orgId]: err.message || 'Unable to rename organization.' }))
+    } finally {
+      setNameSaving(prev => ({ ...prev, [orgId]: false }))
     }
   }
 
@@ -565,14 +649,57 @@ export default function Organizations() {
             {orgs.map(org => {
               const s = stats[org.id] || {}
               const expanded = expandedId === org.id
+              const isEditingName = editingNameId === org.id
               return (
                 <div key={org.id} className="orgs-card">
                   {/* Card header */}
                   <div className="orgs-card-header" onClick={() => toggleExpand(org.id)}>
                     <div className="orgs-card-left">
                       <div className="orgs-card-icon">🏢</div>
-                      <div>
-                        <div className="orgs-card-name">{org.name}</div>
+                      <div style={{ minWidth: 0 }}>
+                        {isEditingName ? (
+                          <div className="orgs-name-edit-row" onClick={e => e.stopPropagation()}>
+                            <input
+                              className="orgs-input"
+                              autoFocus
+                              value={nameDraft[org.id] ?? org.name}
+                              onChange={e => setNameDraft(prev => ({ ...prev, [org.id]: e.target.value }))}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') saveOrgName(org.id, e)
+                                if (e.key === 'Escape') cancelEditName(org.id, e)
+                              }}
+                            />
+                            <button
+                              className="orgs-btn orgs-btn--primary"
+                              style={{ padding: '6px 12px', fontSize: 12 }}
+                              onClick={e => saveOrgName(org.id, e)}
+                              disabled={nameSaving[org.id]}
+                            >
+                              {nameSaving[org.id] ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              className="orgs-btn orgs-btn--ghost"
+                              style={{ padding: '6px 12px', fontSize: 12 }}
+                              onClick={e => cancelEditName(org.id, e)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="orgs-card-name-row">
+                            <div className="orgs-card-name">{org.name}</div>
+                            <button
+                              className="orgs-name-edit-btn"
+                              title="Rename organization"
+                              onClick={e => startEditName(org, e)}
+                            >
+                              ✎
+                            </button>
+                          </div>
+                        )}
+                        {nameError[org.id] && (
+                          <div className="orgs-error">⚠ {nameError[org.id]}</div>
+                        )}
                         <div className="orgs-card-meta">
                           Created {new Date(org.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}
                           {' • '}

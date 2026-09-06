@@ -463,7 +463,23 @@ export default function Settings() {
           gst_number:       formData.gst_number,
         }, { onConflict: 'org_id' })
       if (error) throw error
+
+      // Keep organizations.name (org switcher badge / topbar) in sync with
+      // the company_name just saved above. Routed through the
+      // rename_organization RPC rather than a direct .update() on
+      // organizations — that table's RLS likely only allows super_admin
+      // direct writes, same reason create_organization/delete_organization
+      // already go through RPCs instead of raw table calls.
+      if (formData.company_name?.trim()) {
+        const { error: renameErr } = await supabase.rpc('rename_organization', {
+          org_id_input: activeOrg.orgId,
+          new_name: formData.company_name.trim(),
+        })
+        if (renameErr) throw renameErr
+      }
+
       await refreshSettings()
+      await refresh()
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
@@ -622,45 +638,6 @@ export default function Settings() {
         </div>
         )}
 
-        {/* ── Logo ── */}
-        <div className="settings-card">
-          <div className="settings-card-title">Company Logo</div>
-          <input ref={fileInputRef} type="file" accept="image/*"
-            style={{ display: 'none' }} onChange={handleLogoUpload} />
-          <div
-            className={`logo-upload-area ${formData.company_logo_url ? 'has-logo' : ''}`}
-            onClick={() => !uploading && fileInputRef.current?.click()}
-          >
-            {formData.company_logo_url ? (
-              <>
-                <img src={formData.company_logo_url} alt="Company logo" className="logo-preview" />
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                  <button className="logo-change-btn"
-                    onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>
-                    Change logo
-                  </button>
-                  <button className="logo-change-btn"
-                    style={{ color: '#e53e3e', background: '#fff5f5', borderColor: '#fecaca' }}
-                    onClick={e => { e.stopPropagation(); setFormData(prev => ({ ...prev, company_logo_url: '' })) }}>
-                    Remove
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <span className="logo-upload-icon">🖼</span>
-                <div className="logo-upload-label">Click to upload your logo</div>
-                <div className="logo-upload-hint">PNG, JPG or SVG · Max 2MB · Recommended: 400×200px</div>
-              </>
-            )}
-          </div>
-          {uploading && (
-            <div className="upload-progress">
-              <div className="upload-spinner" /> Uploading logo…
-            </div>
-          )}
-        </div>
-
         {/* ── Company info ── */}
         <div className="settings-card">
           <div className="settings-card-title">Company Information</div>
@@ -670,6 +647,7 @@ export default function Settings() {
               <input className="settings-input" placeholder="Klair Computer Inc."
                 value={formData.company_name}
                 onChange={e => setFormData(prev => ({ ...prev, company_name: e.target.value }))} />
+              <span className="settings-hint">Also updates your organization's name shown in the org switcher</span>
             </div>
             <div className="settings-field settings-field--full">
               <label className="settings-label">Street Address</label>
