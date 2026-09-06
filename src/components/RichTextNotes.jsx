@@ -24,6 +24,18 @@ const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'SPAN', 'BR', 'DIV', 'P'
 export function sanitizeNotesHtml(html) {
   const parsed = new DOMParser().parseFromString(html || '', 'text/html')
 
+  // document.execCommand('foreColor') inserts <font color="..."> in
+  // Chrome/Edge instead of a styled <span> — normalize those into spans
+  // before the main cleanup pass below, or FONT (not in ALLOWED_TAGS)
+  // gets unwrapped and the color is silently discarded, both from the
+  // saved HTML and from what exportInvoicePDF.js later parses.
+  parsed.body.querySelectorAll('font').forEach((fontEl) => {
+    const span = parsed.createElement('span')
+    if (fontEl.color) span.style.color = fontEl.color
+    while (fontEl.firstChild) span.appendChild(fontEl.firstChild)
+    fontEl.replaceWith(span)
+  })
+
   function clean(node) {
     Array.from(node.childNodes).forEach((child) => {
       if (child.nodeType !== Node.ELEMENT_NODE) return
