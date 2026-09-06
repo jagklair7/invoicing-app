@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
 
@@ -13,6 +14,9 @@ const FROM_EMAIL_OVERRIDE = Deno.env.get('FROM_EMAIL')
 const FROM_EMAIL_ADDRESS  = Deno.env.get('FROM_EMAIL_ADDRESS') || 'invoices@digital1now.com'
 const DEFAULT_SENDER_NAME = 'Klair'
 
+const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -26,11 +30,32 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    const { to, subject, html, pdfBase64, filename, companyName, planName } = body
+    const { to, subject, html, pdfBase64, filename, companyName, orgId } = body
 
-    // Free tier (or no subscription row at all) keeps the default Klair
-    // Computer branding; any paid plan sends under the org's own name.
-    const isFreeTier  = !planName || planName.toLowerCase() === 'free'
+    // Resolve plan tier here, server-side, with the service role key —
+    // bypasses RLS. The invoicing client's own signed-in role likely can't
+    // read org_subscriptions/plans directly (that query pattern was lifted
+    // from the super-admin-only Organizations page), so a client-supplied
+    // planName was silently coming back null/undefined for every org and
+    // always falling back to the free-tier default regardless of actual
+    // plan. Looking it up here with orgId sidesteps that entirely.
+    let isFreeTier = true
+    let planName = null
+    if (orgId) {
+      const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+      const { data: subscription, error: subErr } = await supabaseAdmin
+        .from('org_subscriptions')
+        .select('plan:plan_id(name)')
+        .eq('org_id', orgId)
+        .single()
+
+      if (subErr) {
+        console.log('send-invoice: plan lookup error (defaulting to free tier)', subErr.message)
+      }
+      planName = subscription?.plan?.name || null
+      isFreeTier = !planName || planName.toLowerCase() === 'free'
+    }
+
     const senderName  = (!isFreeTier && companyName?.trim()) ? companyName.trim() : DEFAULT_SENDER_NAME
     const fromAddress = FROM_EMAIL_OVERRIDE || `Invoice from ${senderName} <${FROM_EMAIL_ADDRESS}>`
 
@@ -39,6 +64,7 @@ serve(async (req) => {
       subject,
       hasPdf: !!pdfBase64,
       pdfLength: pdfBase64?.length || 0,
+      orgId,
       companyName,
       planName,
       isFreeTier,
