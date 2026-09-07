@@ -91,7 +91,7 @@ useEffect(() => {
       .select('invoice_prefix')
       .eq('org_id', activeOrg.orgId)
       .maybeSingle()
-    const prefix = settings?.invoice_prefix || 'INV-'
+    const prefix = settings?.invoice_prefix ?? 'INV-'
 
     const { data } = await supabase
       .from('invoices')

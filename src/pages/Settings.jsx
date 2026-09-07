@@ -428,7 +428,7 @@ export default function Settings() {
         company_phone:    data.company_phone    || '',
         company_email:    data.company_email    || '',
         company_logo_url: data.company_logo_url || '',
-        invoice_prefix:   data.invoice_prefix   || 'INV-',
+        invoice_prefix:   data.invoice_prefix ?? 'INV-',
         gst_number:       data.gst_number       || '',
       }))
     }
