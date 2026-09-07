@@ -82,6 +82,17 @@ useEffect(() => {
   }, [id, activeOrg?.orgId])
 
   async function suggestInvoiceNumber() {
+    // The prefix was previously hardcoded as 'INV-' here, so changing
+    // Invoice Prefix in Settings never actually affected new invoice
+    // numbers — organization_settings.invoice_prefix was never read in
+    // this file at all. Fetching it here and using it below fixes that.
+    const { data: settings } = await supabase
+      .from('organization_settings')
+      .select('invoice_prefix')
+      .eq('org_id', activeOrg.orgId)
+      .maybeSingle()
+    const prefix = settings?.invoice_prefix || 'INV-'
+
     const { data } = await supabase
       .from('invoices')
       .select('number')
@@ -91,9 +102,9 @@ useEffect(() => {
 
     if (data?.length && data[0].number) {
       const lastNum = parseInt(data[0].number.replace(/\D/g, '')) || 0
-      setInvoice(prev => ({ ...prev, number: `INV-${String(lastNum + 1).padStart(3, '0')}` }))
+      setInvoice(prev => ({ ...prev, number: `${prefix}${String(lastNum + 1).padStart(3, '0')}` }))
     } else {
-      setInvoice(prev => ({ ...prev, number: 'INV-001' }))
+      setInvoice(prev => ({ ...prev, number: `${prefix}001` }))
     }
   }
 
