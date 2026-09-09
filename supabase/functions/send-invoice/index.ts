@@ -149,8 +149,12 @@ function parseNotesHtml(html: string) {
     if (tag === 'b' || tag === 'strong') nextStyle.bold = true
     if (tag === 'i' || tag === 'em') nextStyle.italic = true
     if (tag === 'span') {
-      const colorAttr = node.style?.color || null
-      const parsedColor = parseColor(colorAttr)
+      // deno_dom's wasm build doesn't fully support node.style.color as a
+      // live parsed getter the way a browser does — read the raw `style`
+      // attribute string directly and pull out the color value ourselves.
+      const styleAttr = typeof node.getAttribute === 'function' ? node.getAttribute('style') : null
+      const colorMatch = styleAttr ? styleAttr.match(/color\s*:\s*([^;]+)/i) : null
+      const parsedColor = parseColor(colorMatch ? colorMatch[1].trim() : null)
       if (parsedColor) nextStyle.color = parsedColor
     }
 

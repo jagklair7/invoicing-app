@@ -262,7 +262,6 @@ const css = `
     z-index: 45;
     width: 56px; height: 56px; border-radius: 50%;
     background: #0d7377; color: white;
-    display: flex; align-items: center; justify-content: center;
     box-shadow: 0 8px 20px rgba(13,115,119,0.35), 0 2px 6px rgba(0,0,0,0.1);
     border: none; cursor: pointer;
     font-size: 26px; line-height: 1;
@@ -1036,7 +1035,7 @@ export default function Invoices() {
 
         {/* ── FAB (mobile only) ── */}
         <button
-          className="inv-fab md:hidden"
+          className="inv-fab md:hidden flex items-center justify-center"
           onClick={() => navigate('/invoices/new')}
           disabled={isSuspended}
           aria-label="New invoice"

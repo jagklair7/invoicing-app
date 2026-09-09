@@ -498,11 +498,10 @@ export default function Layout({ children, session }) {
 
       {/* ── Mobile top app bar (hidden md+) ── */}
       <header
-        className="md:hidden"
+        className="md:hidden flex items-center justify-between"
         style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
           height: 56, background: 'white', borderBottom: '1px solid #e2e8f0',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 12px',
           paddingTop: 'env(safe-area-inset-top)',
         }}
@@ -657,11 +656,10 @@ export default function Layout({ children, session }) {
 
       {/* ── Mobile bottom tab bar (hidden md+) ── */}
       <nav
-        className="md:hidden"
+        className="md:hidden flex items-stretch"
         style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
           background: 'white', borderTop: '1px solid #e2e8f0',
-          display: 'flex', alignItems: 'stretch',
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
