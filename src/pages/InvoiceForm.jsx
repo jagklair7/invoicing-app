@@ -267,10 +267,24 @@ function handleProductSelect(idx, productId) {
 
       <textarea
         placeholder="Description / detail"
-        className="p-2 border rounded-lg text-sm w-full resize-none"
-        rows={2}
+        className="p-2 border rounded-lg text-sm w-full resize-none overflow-hidden"
+        rows={1}
         value={item.name}
-        onChange={e => updateItem(idx, 'name', e.target.value)}
+        onChange={e => {
+          updateItem(idx, 'name', e.target.value)
+          e.target.style.height = 'auto'
+          e.target.style.height = e.target.scrollHeight + 'px'
+        }}
+        ref={el => {
+          // Runs on every render — including when a product selection
+          // fills this field programmatically, not just when typing — so
+          // the height stays correct either way: single line by default,
+          // growing only once the content actually wraps to more lines.
+          if (el) {
+            el.style.height = 'auto'
+            el.style.height = el.scrollHeight + 'px'
+          }
+        }}
       />
 
       <input
