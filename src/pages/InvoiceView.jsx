@@ -886,90 +886,23 @@ export default function InvoiceView() {
   }, [id, orgId])   // same, but now a stable primitive string, not an object reference
 
   // ── Send email ─────────────────────────────────────────────────────────────
+  // Sends a tiny JSON payload — no PDF/HTML built here anymore. The
+  // send-invoice Edge Function fetches the invoice/customer/items itself
+  // and generates the PDF + email HTML server-side. This is what fixes the
+  // "works on cellular, fails on some WiFi" issue: the browser no longer
+  // uploads a multi-hundred-KB base64 PDF, just this small body.
   async function handleSendInvoice() {
     if (!sendEmail.trim()) return
     setSending(true)
     setSendResult(null)
     try {
-      const { pdfBase64, filename } = await exportInvoicePDF(invoice, customer, items, activeOrg.orgId, { download: false })
-
-      const html = `
-        <div style="margin:0;padding:0;background:#f1f5f9;">
-          <div style="max-width:640px;margin:0 auto;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
-            <div style="background:#1e293b;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
-              <div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;">
-                ${orgSettings?.companyname || activeOrg?.name || 'Invoice'}
-              </div>
-              <div style="font-size:28px;line-height:1.2;font-weight:700;color:#ffffff;margin:0;">
-                Invoice ${invoice.number}
-              </div>
-              <div style="font-size:14px;color:#cbd5e1;margin-top:8px;">
-                ${fmt(invoice.total)} due${invoice.duedate ? ` on ${fmtDate(invoice.duedate)}` : ''}
-              </div>
-            </div>
-            <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;padding:32px;">
-              <p style="font-size:16px;line-height:1.6;margin:0 0 18px;">Hi ${customer?.name || 'there'},</p>
-              <p style="font-size:14px;line-height:1.7;color:#475569;margin:0 0 24px;">
-                Please find your invoice attached. A summary is included below for quick reference.
-              </p>
-              <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 24px;">
-                <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
-                  <span style="font-size:13px;color:#64748b;">Invoice</span>
-                  <span style="font-size:13px;font-weight:600;color:#1e293b;">${invoice.number}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;">
-                  <span style="font-size:13px;color:#64748b;">Amount Due</span>
-                  <span style="font-size:16px;font-weight:700;color:#0d7377;">${fmt(invoice.total)}</span>
-                </div>
-                ${invoice.duedate ? `
-                <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;">
-                  <span style="font-size:13px;color:#64748b;">Due Date</span>
-                  <span style="font-size:13px;font-weight:600;color:#1e293b;">${fmtDate(invoice.duedate)}</span>
-                </div>` : ''}
-              </div>
-              ${invoice.notes && invoice.notes.trim() !== '' ? `
-              <div style="background:#f8fafc;border-left:4px solid #94a3b8;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
-                <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Invoice notes</div>
-                <div style="font-size:14px;line-height:1.7;color:#334155;">${sanitizeNotesHtml(invoice.notes)}</div>
-              </div>` : ''}
-              ${sendNote ? `
-              <div style="background:#f8fafc;border-left:4px solid #0d7377;border-radius:10px;padding:16px 18px;margin:0 0 24px;">
-                <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Personal note</div>
-                <div style="font-size:14px;line-height:1.7;color:#334155;white-space:pre-wrap;">${sendNote}</div>
-              </div>` : ''}
-              <div style="text-align:center;margin:28px 0 24px;">
-                <a href="mailto:info@klair.ca" style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;">
-                  Contact us
-                </a>
-              </div>
-              <p style="font-size:13px;line-height:1.7;color:#64748b;margin:0;">
-                If you have any questions, please reply to this email and we'll be happy to help.
-              </p>
-              <div style="margin-top:28px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#94a3b8;">
-                <div style="font-weight:600;color:#475569;margin-bottom:4px;">${orgSettings?.companyname || activeOrg?.name || 'Your Company'}</div>
-                ${orgSettings?.companyphone ? `<div>${orgSettings.companyphone}</div>` : ''}
-                ${orgSettings?.companyemail ? `<div>${orgSettings.companyemail}</div>` : ''}
-                ${orgSettings?.companyaddress ? `<div>${orgSettings.companyaddress}</div>` : ''}
-                ${orgSettings?.gstnumber ? `<div style="margin-top:6px;">GST: ${orgSettings.gstnumber}</div>` : ''}
-              </div>
-            </div>
-          </div>
-        </div>
-      `
-
-      // Using supabase.functions.invoke() instead of a raw fetch() — it
-      // automatically attaches the correct apikey + Authorization headers
-      // from this client's own configuration/session, avoiding the gateway
-      // auth mismatch a hand-built fetch() call can hit.
       const { data: result, error: invokeError } = await supabase.functions.invoke('send-invoice', {
         body: {
-          to: sendEmail.trim(),
-          subject: `Invoice ${invoice.number} from ${orgSettings?.company_name || activeOrg?.name}`,
-          html,
-          pdfBase64,
-          filename,
-          companyName: orgSettings?.company_name || activeOrg?.name,
+          invoiceId: id,
           orgId: activeOrg.orgId,
+          to: sendEmail.trim(),
+          sendNote: sendNote || undefined,
+          companyName: orgSettings?.company_name || activeOrg?.name,
         },
       })
 
@@ -994,14 +927,9 @@ export default function InvoiceView() {
         throw new Error(message || 'Failed to send invoice')
       }
 
-      if (invoice.status === 'draft') {
-        await supabase
-          .from('invoices')
-          .update({ status: 'sent' })
-          .eq('id', id)
-          .eq('org_id', activeOrg.orgId)
-        await fetchInvoice()
-      }
+      // The function marks draft → sent server-side now, so just refresh
+      // to pick up any status change.
+      await fetchInvoice()
 
       setSendResult('success')
     } catch (err) {
