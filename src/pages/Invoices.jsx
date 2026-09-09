@@ -218,6 +218,56 @@ const css = `
 
   /* Overdue row highlight */
   tr.overdue-row td:first-child { border-left: 3px solid #f97316; }
+
+  /* ── Mobile filter chips ── */
+  .inv-filter-scroll {
+    display: flex; gap: 8px; overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .inv-filter-scroll::-webkit-scrollbar { display: none; }
+  .inv-filter-chip {
+    flex-shrink: 0; padding: 7px 15px; border-radius: 9999px;
+    font-size: 13px; font-weight: 500; text-transform: capitalize;
+    border: 1.5px solid #e2e8f0; background: white; color: #475569;
+    cursor: pointer; white-space: nowrap;
+  }
+  .inv-filter-chip--active { background: #0f172a; border-color: #0f172a; color: white; }
+
+  /* ── Mobile invoice card ── */
+  .inv-card-mobile {
+    background: white; border: 1px solid #e2e8f0; border-radius: 14px;
+    padding: 14px 16px; cursor: pointer;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.03);
+    position: relative;
+  }
+  .inv-card-mobile.overdue { border-left: 3px solid #f97316; }
+  .inv-card-mobile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .inv-card-mobile-num { font-size: 12px; color: #94a3b8; font-weight: 500; }
+  .inv-card-mobile-customer { font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 2px; }
+  .inv-card-mobile-badges { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .inv-card-mobile-bottom {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid #f1f5f9;
+  }
+  .inv-card-mobile-meta { font-size: 12px; color: #94a3b8; }
+  .inv-card-mobile-total { font-size: 17px; font-weight: 700; color: #0f172a; }
+
+  /* ── FAB (mobile only) ── */
+  .inv-fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    z-index: 45;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #0d7377; color: white;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 8px 20px rgba(13,115,119,0.35), 0 2px 6px rgba(0,0,0,0.1);
+    border: none; cursor: pointer;
+    font-size: 26px; line-height: 1;
+  }
+  .inv-fab:disabled { opacity: 0.4; cursor: not-allowed; }
 `
 
 // ── Action Dropdown ───────────────────────────────────────────────────────────
@@ -347,8 +397,6 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
         note: note || null,
       })
 
-      // Update invoice status
-     // console.log(inv.total, typeof inv.total)
       const newPaid = totalPaid + parseAmount(amount)
       const newStatus = newPaid >= parseAmount(inv.total) - 0.005 ? 'paid' : 'partial'
       await supabase.from('invoices')
@@ -374,7 +422,6 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
           <button className="inv-modal2-close" onClick={onClose}>×</button>
         </div>
         <div className="inv-modal2-body">
-          {/* Balance */}
           <div className="balance-strip">
             <span className="balance-strip-label">
               {isFullyPaid ? '✓ Fully Paid' : 'Balance Remaining'}
@@ -382,7 +429,6 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
             <span className="balance-strip-amount">{fmt(Math.max(balance, 0))}</span>
           </div>
 
-          {/* Payment history */}
           {!loadingH && history.length > 0 && (
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: 8 }}>
@@ -402,7 +448,6 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
             </div>
           )}
 
-          {/* New payment form */}
           {!isFullyPaid && (
             <>
               <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8' }}>
@@ -438,7 +483,6 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
                 <input className="inv-input2" type="text" placeholder="e.g. Deposit, cheque #1234"
                   value={note} onChange={e => setNote(e.target.value)} />
               </div>
-              {/* Quick amount buttons */}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {[balance * 0.5, balance * 0.25, balance].map((v, i) => (
                   <button key={i} className="inv-btn2" style={{ fontSize: 12, padding: '5px 12px' }}
@@ -466,7 +510,7 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
 
 // ── Reminder Modal ────────────────────────────────────────────────────────────
 function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
-  const [mode, setMode]         = useState('now') // 'now' | 'schedule'
+  const [mode, setMode]         = useState('now')
   const [schedDate, setSchedDate] = useState(inv.due_date || '')
   const [sending, setSending]   = useState(false)
   const [result, setResult]     = useState(null)
@@ -479,7 +523,6 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
       if (!email) throw new Error('No email on file for this customer')
 
       if (mode === 'schedule') {
-        // Save to DB for scheduled send
         await supabase.from('invoice_reminders').insert({
           invoice_id:    inv.id,
           org_id:        activeOrg.orgId,
@@ -490,7 +533,6 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
         return
       }
 
-      // Send now via edge function
       const html = `
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#1e293b;">
           <div style="background:#1e293b;padding:24px 28px;border-radius:12px 12px 0 0;">
@@ -506,13 +548,7 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
               and remains unpaid.
             </p>
             <p style="font-size:14px;color:#475569;margin:0;">
-              Please arrange payment at your earliest convenience.
-              
-                          href="mailto:info@klair.ca"
-                          style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
-                        >
-                          Contact us
-                        </a> if you have any questions.
+              Please arrange payment at your earliest convenience. Contact us if you have any questions.
             </p>
             ${orgSettings?.company_phone ? `<p style="font-size:13px;color:#94a3b8;margin-top:16px;">${orgSettings.company_name || ''} · ${orgSettings.company_phone}</p>` : ''}
           </div>
@@ -540,7 +576,6 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error?.message || JSON.stringify(data.error))
 
-      // Mark reminder sent
       await supabase.from('invoices')
         .update({ reminder_sent: true, reminder_sent_at: new Date().toISOString() })
         .eq('id', inv.id)
@@ -645,72 +680,64 @@ function ResendModal({ inv, customer, orgSettings, activeOrg, onClose }) {
   const [sending, setSending] = useState(false)
   const [result, setResult] = useState(null)
 
-async function send() {
-  if (!email.trim()) return
-  setSending(true)
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    if (!session) throw new Error('Not authenticated')
-    
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-    if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL not set')
+  async function send() {
+    if (!email.trim()) return
+    setSending(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
 
-    const html = `
-      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-        <div style="background:#1e293b;padding:24px 28px;border-radius:12px 12px 0 0;">
-          <h2 style="color:white;margin:0;">Invoice ${inv.number}</h2>
-          <p style="color:rgba(255,255,255,0.5);margin:4px 0 0;font-size:13px;">
-            From ${orgSettings?.company_name || ''}
-          </p>
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL not set')
+
+      const html = `
+        <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:#1e293b;padding:24px 28px;border-radius:12px 12px 0 0;">
+            <h2 style="color:white;margin:0;">Invoice ${inv.number}</h2>
+            <p style="color:rgba(255,255,255,0.5);margin:4px 0 0;font-size:13px;">
+              From ${orgSettings?.company_name || ''}
+            </p>
+          </div>
+          <div style="background:#f8fafc;padding:24px 28px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
+            <p>Hi ${customer?.name || 'there'},</p>
+            <p style="color:#475569;">
+              Please find your invoice <strong>${inv.number}</strong> 
+              for <strong>${fmt(inv.total)}</strong>
+              ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
+            </p>
+            <p style="color:#475569;">Please get in touch if you have any questions.</p>
+            <p style="color:#475569;">Accounts Receivable- Klair Computer</p>
+          </div>
         </div>
-        <div style="background:#f8fafc;padding:24px 28px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
-          <p>Hi ${customer?.name || 'there'},</p>
-          <p style="color:#475569;">
-            Please find your invoice <strong>${inv.number}</strong> 
-            for <strong>${fmt(inv.total)}</strong>
-            ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
-          </p>
-          <p style="color:#475569;">Please get in touch if you have any questions.
-          
-                          href="mailto:info@klair.ca"
-                          style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;"
-                        >
-                          Contact us
-                        </a>
-          </p>
-          <p style="color:#475569;">Accounts Receivable- Klair Computer</p>
-        </div>
-      </div>
-    `
+      `
 
-    const res = await fetch(
-      `${supabaseUrl}/functions/v1/send-invoice`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          to:        email.trim(),
-          subject:   `Invoice ${inv.number} from ${orgSettings?.company_name || ''}`,
-          html,
-          pdfBase64: '',   // ← empty string, not null
-          filename:  `invoice-${inv.number}.pdf`,
-        })
-      }
-    )
+      const res = await fetch(
+        `${supabaseUrl}/functions/v1/send-invoice`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            to:        email.trim(),
+            subject:   `Invoice ${inv.number} from ${orgSettings?.company_name || ''}`,
+            html,
+            pdfBase64: '',
+            filename:  `invoice-${inv.number}.pdf`,
+          })
+        }
+      )
 
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error?.message || data.error || 'Send failed')
-    setResult({ ok: true })
-  } catch (err) {
-    setResult({ ok: false, msg: err.message })
-  } finally {
-    setSending(false)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error?.message || data.error || 'Send failed')
+      setResult({ ok: true })
+    } catch (err) {
+      setResult({ ok: false, msg: err.message })
+    } finally {
+      setSending(false)
+    }
   }
-}
 
   return (
     <div className="inv-overlay" onClick={onClose}>
@@ -748,11 +775,49 @@ async function send() {
   )
 }
 
+// ── Mobile invoice card ────────────────────────────────────────────────────────
+function InvoiceCardMobile({ inv, onOpen, onAction, isSuspended }) {
+  const isOverdue = inv.due_date && new Date(inv.due_date) < new Date() && inv.status === 'sent'
+  const sc = statusColor(inv.status)
+  return (
+    <div className={`inv-card-mobile${isOverdue ? ' overdue' : ''}`} onClick={() => onOpen(inv)}>
+      <div className="inv-card-mobile-top">
+        <div style={{ minWidth: 0 }}>
+          <div className="inv-card-mobile-num">{inv.number}</div>
+          <div className="inv-card-mobile-customer">{inv.customers?.name || '—'}</div>
+        </div>
+        <div className="inv-card-mobile-badges">
+          <span style={{
+            padding: '3px 10px', borderRadius: 20, fontSize: 11,
+            fontWeight: 600, textTransform: 'capitalize',
+            background: sc.bg, color: sc.color, whiteSpace: 'nowrap',
+          }}>
+            {inv.status}
+          </span>
+          <ActionMenu inv={inv} onAction={onAction} isSuspended={isSuspended} />
+        </div>
+      </div>
+      <div className="inv-card-mobile-bottom">
+        <div className="inv-card-mobile-meta">
+          {inv.due_date ? (
+            <span style={{ color: isOverdue ? '#dc2626' : '#94a3b8', fontWeight: isOverdue ? 600 : 400 }}>
+              Due {fmtDate(inv.due_date)}{isOverdue ? ' · overdue' : ''}
+            </span>
+          ) : (
+            <span>Issued {fmtDate(inv.date)}</span>
+          )}
+        </div>
+        <div className="inv-card-mobile-total">{fmt(inv.total || 0)}</div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function Invoices() {
   const [invoices, setInvoices]       = useState([])
   const [filter, setFilter]           = useState('all')
-  const [modal, setModal]             = useState(null) // { type, inv }
+  const [modal, setModal]             = useState(null)
   const [customers, setCustomers]     = useState({})
   const [orgSettings, setOrgSettings] = useState(null)
   const navigate  = useNavigate()
@@ -865,15 +930,16 @@ export default function Invoices() {
       <style>{css}</style>
       <div className="inv-list-root">
         {/* Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-5 md:mb-6">
           <div>
-            <h1 className="text-2xl font-semibold">Invoices</h1>
-            <p className="text-sm text-gray-500">Manage all your invoices</p>
+            <h1 className="text-xl md:text-2xl font-semibold">Invoices</h1>
+            <p className="hidden md:block text-sm text-gray-500">Manage all your invoices</p>
           </div>
+          {/* Desktop "New Invoice" button — mobile uses the FAB instead */}
           <button
             onClick={() => navigate('/invoices/new')}
             disabled={isSuspended}
-            className="bg-black text-white px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+            className="hidden md:inline-block bg-black text-white px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
           >
             + New Invoice
           </button>
@@ -881,20 +947,21 @@ export default function Invoices() {
 
         <SuspendedBanner />
 
-        {/* Filters */}
-        <div className="flex gap-2 mb-4">
+        {/* Filters — horizontally scrollable on mobile */}
+        <div className="inv-filter-scroll mb-4">
           {['all', 'draft', 'sent', 'partial', 'paid', 'void'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-full text-sm border capitalize ${
-                filter === f ? 'bg-black text-white border-black' : 'bg-white border-gray-200'
-              }`}>
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`inv-filter-chip ${filter === f ? 'inv-filter-chip--active' : ''}`}
+            >
               {f}
             </button>
           ))}
         </div>
 
-        {/* Table */}
-        <div className="bg-white rounded-2xl shadow overflow-hidden">
+        {/* ── Desktop table (md and up) ── */}
+        <div className="hidden md:block bg-white rounded-2xl shadow overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-left text-gray-500">
               <tr>
@@ -948,6 +1015,34 @@ export default function Invoices() {
             </div>
           )}
         </div>
+
+        {/* ── Mobile cards (below md) ── */}
+        <div className="md:hidden flex flex-col gap-3">
+          {filtered.map(inv => (
+            <InvoiceCardMobile
+              key={inv.id}
+              inv={inv}
+              onOpen={(i) => navigate(`/invoices/${i.id}`)}
+              onAction={handleAction}
+              isSuspended={isSuspended}
+            />
+          ))}
+          {filtered.length === 0 && (
+            <div className="p-10 text-center text-gray-400 text-sm bg-white rounded-2xl border border-gray-100">
+              No {filter === 'all' ? '' : filter + ' '}invoices found.
+            </div>
+          )}
+        </div>
+
+        {/* ── FAB (mobile only) ── */}
+        <button
+          className="inv-fab md:hidden"
+          onClick={() => navigate('/invoices/new')}
+          disabled={isSuspended}
+          aria-label="New invoice"
+        >
+          +
+        </button>
       </div>
 
       {/* Modals */}

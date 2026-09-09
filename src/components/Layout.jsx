@@ -1,4 +1,5 @@
 // src/components/Layout.jsx
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
@@ -14,7 +15,7 @@ const ProdIcon = () => (
 )
 function DashIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
       <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".85"/>
       <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
       <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".4"/>
@@ -24,7 +25,7 @@ function DashIcon() {
 }
 function CustIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="5" r="3" fill="currentColor" opacity=".85"/>
       <path d="M2 13c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".85"/>
     </svg>
@@ -32,7 +33,7 @@ function CustIcon() {
 }
 function InvIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
       <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
       <path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
     </svg>
@@ -109,7 +110,6 @@ function StatsIcon() {
     </svg>
   )
 }
-
 function VendorIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -137,7 +137,6 @@ function QuoteIcon() {
     </svg>
   )
 }
-
 function EstIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -147,15 +146,37 @@ function EstIcon() {
     </svg>
   )
 }
+function MenuIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function CloseIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path d="M4 4l10 10M14 4L4 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function MoreIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="4" cy="10" r="1.6" fill="currentColor"/>
+      <circle cx="10" cy="10" r="1.6" fill="currentColor"/>
+      <circle cx="16" cy="10" r="1.6" fill="currentColor"/>
+    </svg>
+  )
+}
 
-// ── rest of the file continues as before...
-
-// ── NavItem ───────────────────────────────────────────────────────────────────
-function NavItem({ to, label, icon, end }) {
+// ── NavItem (desktop sidebar + drawer) ─────────────────────────────────────
+function NavItem({ to, label, icon, end, onClick }) {
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onClick}
       className={({ isActive }) => [
         'group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150',
         isActive
@@ -175,6 +196,62 @@ function NavItem({ to, label, icon, end }) {
   )
 }
 
+// ── Bottom tab item (mobile) ────────────────────────────────────────────────
+function TabItem({ to, label, icon, end, onClick }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      onClick={onClick}
+      className={({ isActive }) => [
+        'flex flex-1 flex-col items-center justify-center gap-1 py-2 min-w-0',
+        isActive ? 'text-teal-700' : 'text-slate-400',
+      ].join(' ')}
+    >
+      {icon}
+      <span className="text-[11px] font-medium leading-none truncate max-w-full">{label}</span>
+    </NavLink>
+  )
+}
+
+function MoreTabButton({ active, onClick, label = 'More' }) {
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        'flex flex-1 flex-col items-center justify-center gap-1 py-2 min-w-0 bg-transparent border-none',
+        active ? 'text-teal-700' : 'text-slate-400',
+      ].join(' ')}
+    >
+      <MoreIcon />
+      <span className="text-[11px] font-medium leading-none">{label}</span>
+    </button>
+  )
+}
+
+// ── Page title lookup for the mobile top bar ───────────────────────────────
+function pageTitleFor(pathname) {
+  const map = [
+    ['/customers', 'Customers'],
+    ['/products', 'Products'],
+    ['/employees', 'Employees'],
+    ['/payroll', 'Payroll'],
+    ['/invoices', 'Invoices'],
+    ['/estimates', 'Estimates'],
+    ['/quotes', 'Quotes'],
+    ['/vendors', 'Vendors'],
+    ['/purchase-orders', 'Purchase Orders'],
+    ['/settings', 'Settings'],
+    ['/admin/analytics', 'Analytics'],
+    ['/admin', 'Admin Panel'],
+    ['/organizations', 'Organizations'],
+  ]
+  for (const [prefix, title] of map) {
+    if (pathname.startsWith(prefix)) return title
+  }
+  return 'Dashboard'
+}
+
 // ── Main Layout ───────────────────────────────────────────────────────────────
 export default function Layout({ children, session }) {
   const navigate = useNavigate()
@@ -182,14 +259,17 @@ export default function Layout({ children, session }) {
   const { orgs, activeOrg, switchOrg, isSuperAdmin, loading: orgLoading } = useOrg()
   const { flags, loading: flagsLoading } = useFeatureFlags()
 
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // Close the drawer automatically whenever the route changes.
+  useEffect(() => { setDrawerOpen(false) }, [location.pathname])
+
   async function handleLogout() {
     await supabase.auth.signOut()
     navigate('/login')
   }
 
   // If the user is signed out, let the route-level redirects own the UI.
-  // Otherwise the no-org fallback below could render the welcome card on a
-  // logged-out visit to the root URL instead of the login screen.
   if (!session) {
     return <>{children}</>
   }
@@ -242,18 +322,47 @@ export default function Layout({ children, session }) {
     )
   }
 
+  // Shared block of "everything else" nav items shown inside the mobile drawer
+  // (desktop keeps these directly in the sidebar, unchanged).
+  const drawerExtraNav = (
+    <>
+      {flags.products !== false && (
+        <NavItem to="/products" label="Products" icon={<ProdIcon />} onClick={() => setDrawerOpen(false)} />
+      )}
+      <NavItem to="/employees" label="Employees" icon={<EmpIcon />} onClick={() => setDrawerOpen(false)} />
+      <NavItem to="/payroll" label="Payroll" icon={<PayIcon />} onClick={() => setDrawerOpen(false)} />
+      <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} onClick={() => setDrawerOpen(false)} />
+      <NavItem to="/quotes" label="Quotes" icon={<QuoteIcon />} onClick={() => setDrawerOpen(false)} />
+      <NavItem to="/vendors" label="Vendors" icon={<VendorIcon />} onClick={() => setDrawerOpen(false)} />
+      <NavItem to="/purchase-orders" label="Purchase Orders" icon={<POIcon />} onClick={() => setDrawerOpen(false)} />
+    </>
+  )
+
+  const drawerAdminNav = (
+    <>
+      {isSuperAdmin && <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} onClick={() => setDrawerOpen(false)} />}
+      {isSuperAdmin && <NavItem to="/admin/analytics" label="Analytics" icon={<StatsIcon />} onClick={() => setDrawerOpen(false)} />}
+      {isSuperAdmin && <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} onClick={() => setDrawerOpen(false)} />}
+      {flags.settings !== false && (
+        <NavItem to="/settings" label="Settings" icon={<SetIcon />} onClick={() => setDrawerOpen(false)} />
+      )}
+    </>
+  )
+
   return (
     <div className="flex min-h-screen bg-slate-50">
 
-      {/* ── Sidebar ── */}
-      <aside style={{
-        width: 224, Height: '100vh', background: 'white',
-        borderRight: '1px solid #e2e8f0', display: 'flex',
-        flexDirection: 'column', position: 'fixed',
-        top: 0, left: 0, bottom: 0, zIndex: 40,
-        overflowY: 'auto',
-      }}>
-
+      {/* ── Desktop sidebar (unchanged, hidden below md) ── */}
+      <aside
+        className="hidden md:flex"
+        style={{
+          width: 224, background: 'white',
+          borderRight: '1px solid #e2e8f0',
+          flexDirection: 'column', position: 'fixed',
+          top: 0, left: 0, bottom: 0, zIndex: 40,
+          overflowY: 'auto',
+        }}
+      >
         {/* Brand */}
         <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid #f1f5f9' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -299,7 +408,6 @@ export default function Layout({ children, session }) {
               </select>
               <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8', fontSize: 10 }}>▼</span>
             </div>
-            {/* Create new org link */}
             <button
               onClick={() => navigate('/create-org')}
               style={{ marginTop: 6, fontSize: 11, color: '#0d7377', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, padding: '2px 4px' }}
@@ -310,7 +418,7 @@ export default function Layout({ children, session }) {
         )}
 
         {/* Main nav — filtered by feature flags */}
-       <nav style={{ flex: '1 1 auto', minHeight: 0, padding: '10px 10px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
+        <nav style={{ flex: '1 1 auto', minHeight: 0, padding: '10px 10px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           <NavItem to="/" label="Dashboard" icon={<DashIcon />} end />
           {flags.customers !== false && (
             <NavItem to="/customers" label="Customers" icon={<CustIcon />} />
@@ -323,36 +431,23 @@ export default function Layout({ children, session }) {
           {flags.invoices !== false && (
             <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
           )}
-          
           <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
           <NavItem to="/quotes" label="Quotes" icon={<QuoteIcon />} />
           <NavItem to="/vendors" label="Vendors" icon={<VendorIcon />} />
           <NavItem to="/purchase-orders" label="Purchase Orders" icon={<POIcon />} />
-          
         </nav>
-       
 
         {/* Bottom nav */}
         <div style={{ padding: '0 10px 10px', borderTop: '1px solid #f1f5f9', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <div style={{ padding: '0 6px 6px', fontSize: 10, fontWeight: 600, color: '#cbd5e1', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Admin
           </div>
-
-          {/* Super admin panel link */}
-          {isSuperAdmin && (
-            <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} />
-          )}
-          {isSuperAdmin && (
-            <NavItem to="/admin/analytics" label="Analytics" icon={<StatsIcon />} />
-          )}
-          {isSuperAdmin && (
-            <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} />
-          )}
-
+          {isSuperAdmin && <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} />}
+          {isSuperAdmin && <NavItem to="/admin/analytics" label="Analytics" icon={<StatsIcon />} />}
+          {isSuperAdmin && <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} />}
           {flags.settings !== false && (
             <NavItem to="/settings" label="Settings" icon={<SetIcon />} />
           )}
-
           <button
             onClick={handleLogout}
             style={{
@@ -401,9 +496,198 @@ export default function Layout({ children, session }) {
         )}
       </aside>
 
+      {/* ── Mobile top app bar (hidden md+) ── */}
+      <header
+        className="md:hidden"
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
+          height: 56, background: 'white', borderBottom: '1px solid #e2e8f0',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 12px',
+          paddingTop: 'env(safe-area-inset-top)',
+        }}
+      >
+        <button
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open menu"
+          style={{ background: 'none', border: 'none', color: '#475569', padding: 8, display: 'flex', cursor: 'pointer' }}
+        >
+          <MenuIcon />
+        </button>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+          {pageTitleFor(location.pathname)}
+        </div>
+        <div style={{
+          width: 28, height: 28, borderRadius: 7,
+          background: 'linear-gradient(135deg, #0d7377 0%, #14a0a5 100%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'white', fontWeight: 800, fontSize: 13,
+          fontFamily: 'Georgia, serif',
+        }}>K</div>
+      </header>
+
+      {/* ── Mobile drawer (slide-in, hidden md+) ── */}
+      {drawerOpen && (
+        <div className="md:hidden" style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
+          <div
+            onClick={() => setDrawerOpen(false)}
+            style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.45)' }}
+          />
+          <div style={{
+            position: 'absolute', top: 0, left: 0, bottom: 0, width: '82%', maxWidth: 300,
+            background: 'white', boxShadow: '8px 0 24px rgba(0,0,0,0.12)',
+            display: 'flex', flexDirection: 'column', overflowY: 'auto',
+            paddingTop: 'env(safe-area-inset-top)',
+          }}>
+            <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 30, height: 30, borderRadius: 8,
+                  background: 'linear-gradient(135deg, #0d7377 0%, #14a0a5 100%)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontWeight: 800, fontSize: 14,
+                  fontFamily: 'Georgia, serif',
+                }}>K</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: '#0f172a' }}>Klair</div>
+              </div>
+              <button onClick={() => setDrawerOpen(false)} aria-label="Close menu"
+                style={{ background: 'none', border: 'none', color: '#94a3b8', padding: 6, display: 'flex', cursor: 'pointer' }}>
+                <CloseIcon />
+              </button>
+            </div>
+
+            {/* Org switcher */}
+            {orgs.length > 0 && (
+              <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6, paddingLeft: 4 }}>
+                  Organization
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={activeOrg?.orgId || ''}
+                    onChange={e => {
+                      const selected = orgs.find(o => o.orgId === e.target.value)
+                      if (selected) switchOrg(selected)
+                    }}
+                    style={{
+                      width: '100%', padding: '9px 28px 9px 10px',
+                      fontSize: 13, fontWeight: 500, color: '#1e293b',
+                      background: '#f8fafc', border: '1.5px solid #e2e8f0',
+                      borderRadius: 8, outline: 'none', cursor: 'pointer',
+                      appearance: 'none', fontFamily: 'inherit',
+                    }}
+                  >
+                    {orgs.map(o => (
+                      <option key={o.orgId} value={o.orgId}>{o.name}</option>
+                    ))}
+                  </select>
+                  <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8', fontSize: 10 }}>▼</span>
+                </div>
+                <button
+                  onClick={() => { setDrawerOpen(false); navigate('/create-org') }}
+                  style={{ marginTop: 6, fontSize: 11, color: '#0d7377', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, padding: '2px 4px' }}
+                >
+                  + New Organization
+                </button>
+              </div>
+            )}
+
+            <nav style={{ padding: '10px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <NavItem to="/" label="Dashboard" icon={<DashIcon />} end onClick={() => setDrawerOpen(false)} />
+              {flags.customers !== false && (
+                <NavItem to="/customers" label="Customers" icon={<CustIcon />} onClick={() => setDrawerOpen(false)} />
+              )}
+              {flags.invoices !== false && (
+                <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} onClick={() => setDrawerOpen(false)} />
+              )}
+              {drawerExtraNav}
+            </nav>
+
+            <div style={{ padding: '10px 10px 10px', borderTop: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ padding: '0 6px 6px', fontSize: 10, fontWeight: 600, color: '#cbd5e1', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Admin
+              </div>
+              {drawerAdminNav}
+              <button
+                onClick={() => { setDrawerOpen(false); handleLogout() }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 12px', borderRadius: 8,
+                  fontSize: 14, fontWeight: 500,
+                  color: '#94a3b8', background: 'none', border: 'none',
+                  cursor: 'pointer', width: '100%', textAlign: 'left',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <LogoutIcon />
+                Logout
+              </button>
+            </div>
+
+            {activeOrg && (
+              <div style={{
+                margin: '10px 10px 16px', padding: '8px 10px',
+                background: 'linear-gradient(135deg, #e8f5f5 0%, #f0fdfe 100%)',
+                borderRadius: 8, border: '1px solid #b2e0e2',
+                display: 'flex', alignItems: 'center', gap: 7,
+              }}>
+                <span style={{ color: '#0d7377' }}><BuildingIcon /></span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, color: '#0d7377', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeOrg.name}</span>
+                    {activeOrg.role && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                        padding: '2px 6px', borderRadius: 9999,
+                        background: activeOrg.role === 'owner' ? '#fef3c7' : activeOrg.role === 'admin' ? '#e0e7ff' : '#d9f7ef',
+                        color: activeOrg.role === 'owner' ? '#b45309' : activeOrg.role === 'admin' ? '#1e40af' : '#0f766e',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {activeOrg.role.replace('_', ' ')}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#5eadb0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active org</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile bottom tab bar (hidden md+) ── */}
+      <nav
+        className="md:hidden"
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+          background: 'white', borderTop: '1px solid #e2e8f0',
+          display: 'flex', alignItems: 'stretch',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
+      >
+        <TabItem to="/" label="Dashboard" icon={<DashIcon />} end />
+        {flags.customers !== false && (
+          <TabItem to="/customers" label="Customers" icon={<CustIcon />} />
+        )}
+        {flags.invoices !== false && (
+          <TabItem to="/invoices" label="Invoices" icon={<InvIcon />} />
+        )}
+        <MoreTabButton active={drawerOpen} onClick={() => setDrawerOpen(true)} />
+      </nav>
+
       {/* ── Main content ── */}
-      <main style={{ marginLeft: 224, flex: 1, padding: 24, minHeight: '100vh', background: '#f8fafc' }}>
-        {children}
+      <main
+        className="md:ml-[224px]"
+        style={{
+          flex: 1,
+          minHeight: '100vh',
+          background: '#f8fafc',
+        }}
+      >
+        {/* Mobile spacing: room for the fixed top bar + bottom tab bar */}
+        <div className="p-4 pt-[68px] pb-[76px] md:p-6 md:pt-6 md:pb-6">
+          {children}
+        </div>
       </main>
     </div>
   )
