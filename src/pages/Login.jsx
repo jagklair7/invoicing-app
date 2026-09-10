@@ -97,28 +97,7 @@ export default function Login() {
         New here? Sign up and then create your company to start using the product.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '24px' }}>
-        <OAuthButton
-          icon={<GoogleIcon />}
-          label="Continue with Google"
-          onClick={() => handleOAuthLogin('google')}
-          disabled={!!oauthLoading}
-        />
-        <OAuthButton
-          icon={<FacebookIcon />}
-          label="Continue with Facebook"
-          onClick={() => handleOAuthLogin('facebook')}
-          disabled={!!oauthLoading}
-        />
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0' }}>
-        <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
-        <span style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>or</span>
-        <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
-      </div>
-      
-      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '24px' }}>
         <input 
           type="email" 
           placeholder="Email" 
@@ -146,6 +125,27 @@ export default function Login() {
           Don't have an account? <Link to="/signup" style={{ color: '#0d7377' }}>Sign up now</Link>.
         </p>
       </form>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0' }}>
+        <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+        <span style={{ fontSize: 12, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>or</span>
+        <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <OAuthButton
+          icon={<GoogleIcon />}
+          label="Continue with Google"
+          onClick={() => handleOAuthLogin('google')}
+          disabled={!!oauthLoading}
+        />
+        <OAuthButton
+          icon={<FacebookIcon />}
+          label="Continue with Facebook"
+          onClick={() => handleOAuthLogin('facebook')}
+          disabled={!!oauthLoading}
+        />
+      </div>
     </div>
   )
 }
