@@ -16,6 +16,25 @@ export default function AuthCallback() {
   const navigate = useNavigate()
 
   useEffect(() => {
+    let settled = false
+
+    const finishSuccess = async (session) => {
+      if (settled) return
+      settled = true
+      const user = session.user
+      await ensureProfileExists(user)
+      setStatus('success')
+      setMessage('Your account is now confirmed. Redirecting you to setup your company…')
+      window.setTimeout(() => navigate('/', { replace: true }), 2000)
+    }
+
+    const finishError = (msg) => {
+      if (settled) return
+      settled = true
+      setStatus('error')
+      setMessage(msg)
+    }
+
     const handleCallback = async () => {
       const hash = window.location.hash || ''
       const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
@@ -23,29 +42,37 @@ export default function AuthCallback() {
       const errorDescription = params.get('error_description')
 
       if (errorCode) {
-        setStatus('error')
-        setMessage(translateError(errorCode, errorDescription))
+        finishError(translateError(errorCode, errorDescription))
         return
       }
 
-      const { data, error } = await supabase.auth.getSessionFromUrl({ storeSession: true })
+      // v2: the client auto-parses the URL fragment on load (detectSessionInUrl: true
+      // is the default). Just read the session it produced.
+      const { data, error } = await supabase.auth.getSession()
+
       if (error) {
-        setStatus('error')
-        setMessage(translateError(error.error, error.error_description) || error.message || 'Unable to parse the login link.')
+        finishError(error.message || 'Unable to parse the login link.')
         return
       }
 
       if (data?.session) {
-        const user = data.session.user
-        await ensureProfileExists(user)
-        setStatus('success')
-        setMessage('Your account is now confirmed. Redirecting you to setup your company…')
-        window.setTimeout(() => navigate('/', { replace: true }), 2000)
+        finishSuccess(data.session)
         return
       }
 
-      setStatus('error')
-      setMessage('Nothing to confirm. Please sign in manually.')
+      // Fallback: in case the SDK hasn't finished processing the URL yet by the
+      // time getSession() ran, listen briefly for the resulting auth event.
+      const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session) {
+          listener.subscription.unsubscribe()
+          finishSuccess(session)
+        }
+      })
+
+      window.setTimeout(() => {
+        listener.subscription.unsubscribe()
+        finishError('Nothing to confirm. Please sign in manually.')
+      }, 4000)
     }
 
     handleCallback()
