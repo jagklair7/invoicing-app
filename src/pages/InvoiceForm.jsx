@@ -7,6 +7,7 @@ import { checkCanCreateInvoice } from '../utils/planLimits'
 import SuspendedBanner from '../components/SuspendedBanner'
 import DateInput from '../components/DateInput'
 import RichTextNotes from '../components/RichTextNotes'
+import { resolveDefaultNotes, textTemplateToHtml, isNotesEmpty } from '../utils/notesTemplate'
 
 // ASSUMPTION: default payment terms not found elsewhere in this file or in
 // stored project notes — defaulting to Net 30. Adjust DEFAULT_TERMS_DAYS if
@@ -43,10 +44,13 @@ export default function InvoiceForm() {
   const [items, setItems] = useState([{ product_id: '', name: '', quantity: 1, unit_price: 0 }])
 
   // Load customers + products scoped to org
+  // NOTE: added parent_customer_id + default_notes to the customers select
+  // (previously id, name only) so the Notes auto-fill effect below can
+  // resolve a customer's template, or inherit its management company's.
   useEffect(() => {
     if (!activeOrg?.orgId) return
     supabase.from('customers')
-      .select('id, name')
+      .select('id, name, parent_customer_id, default_notes')
       .eq('org_id', activeOrg.orgId)
       .order('name')
       .then(({ data }) => setCustomers(data || []))
@@ -75,6 +79,24 @@ useEffect(() => {
   if (!isNew) return
   localStorage.setItem(DRAFT_KEY, JSON.stringify({ invoice, items }))
 }, [invoice, items])
+
+  // Auto-fill Notes from the selected customer's default_notes template
+  // (inherited from its management company if the customer has none of
+  // its own) whenever the customer changes. Only fires while Notes is
+  // still empty, so it never overwrites a restored draft or anything the
+  // user has already typed — including their own edits to a previously
+  // auto-filled template. Reruns once `customers` finishes loading too,
+  // since a restored/selected customer_id can resolve before that fetch
+  // completes.
+  useEffect(() => {
+    if (!invoice.customer_id) return
+    if (!isNotesEmpty(invoice.notes)) return
+    const customer = customers.find(c => c.id === invoice.customer_id)
+    if (!customer) return
+    const template = resolveDefaultNotes(customer, customers)
+    if (!template) return
+    setInvoice(prev => (isNotesEmpty(prev.notes) ? { ...prev, notes: textTemplateToHtml(template) } : prev))
+  }, [invoice.customer_id, customers])
 
   // Auto-generate invoice number scoped to org
   useEffect(() => {
