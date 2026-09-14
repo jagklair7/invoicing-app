@@ -38,6 +38,8 @@ import QuotePublic from "./pages/QuotePublic";
 import Vendors           from './pages/Vendors.jsx'
 import PurchaseOrders    from './pages/PurchaseOrders.jsx'
 import PurchaseOrderView from './pages/PurchaseOrderView.jsx'
+// add to the imports at the top
+import ResetPassword from './pages/ResetPassword.jsx'
 
 // ── Guards ────────────────────────────────────────────────────────────────────
 
@@ -118,6 +120,7 @@ export default function App() {
               <Route path="/login"         element={!session ? <Login />  : <Navigate to="/" replace />} />
               <Route path="/signup"        element={!session ? <Signup /> : <Navigate to="/" replace />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
 
               <Route path="/onboarding" element={
                 session ? <Onboarding /> : <Navigate to="/login" replace />

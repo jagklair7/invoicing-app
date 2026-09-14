@@ -285,7 +285,7 @@ export default function Layout({ children, session }) {
   }
 
   // ── Bypass routes (no sidebar needed) ────────────────────────────────────
-  const bypassRoutes = ['/create-org', '/onboarding', '/auth/callback', '/login', '/signup']
+  const bypassRoutes = ['/create-org', '/onboarding', '/auth/callback', '/login', '/signup', '/reset-password']
   if (bypassRoutes.includes(location.pathname)) {
     return <>{children}</>
   }
