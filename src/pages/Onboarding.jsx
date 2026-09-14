@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { checkCanCreateOrg } from '../utils/planLimits'
+import { useHelcimPay } from '../hooks/useHelcimPay'
 
 const css = `
 .onboarding-wrap {
@@ -230,7 +231,61 @@ export default function Onboarding() {
     fetchPlans()
   }, [])
 
-  
+  const selectedPlan = plans.find(p => p.id === selectedPlanId) || null
+
+  // Creates the org via the create_organization RPC. helcimTransactionId
+  // is null for the free plan; for paid plans it must be a real Helcim
+  // transaction id or the RPC itself will reject the insert (see the
+  // migration — this is the actual enforcement point, not just this UI).
+  async function finishCreateOrg(helcimTransactionId) {
+    try {
+      const { data, error: fnErr } = await supabase
+        .rpc('create_organization', {
+          org_name: orgName.trim(),
+          plan_id: selectedPlanId,
+          helcim_transaction_id: helcimTransactionId,
+        })
+      if (fnErr) throw fnErr
+
+      const org = typeof data === 'string' ? JSON.parse(data) : data
+      localStorage.setItem('activeOrgId', org.id)
+      await refresh()
+      navigate('/', { replace: true })
+    } catch (err) {
+      setError(
+        err.message ||
+        'Something went wrong creating your organization after payment. Contact support with your payment confirmation.'
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // NOTE: `txn?.transactionId` below is an assumed field name for
+  // HelcimPay.js's SUCCESS payload — verify against a real console.log(txn)
+  // during testing. If the field name is wrong, transactionId will end up
+  // null, the warning below will fire, and create_organization will
+  // correctly refuse to activate the paid plan (rather than silently
+  // activating without a valid payment reference).
+  async function handlePaymentSuccess(txn) {
+    const transactionId = txn?.transactionId ?? txn?.data?.transactionId ?? null
+    if (!transactionId) {
+      console.warn('Helcim payment succeeded but no transactionId was found on the payload:', txn)
+    }
+    await finishCreateOrg(transactionId ? String(transactionId) : null)
+  }
+
+  function handlePaymentError(msg) {
+    setError(msg || 'Payment failed. Your organization was not created.')
+    setSaving(false)
+  }
+
+  const { openPayment: openHelcimPayment } = useHelcimPay({
+    amount: selectedPlan?.price_monthly || 0,
+    onSuccess: handlePaymentSuccess,
+    onError: handlePaymentError,
+  })
+
   async function handleCreate() {
     const name = orgName.trim()
     if (!name) return setError('Please enter an organization name.')
@@ -244,20 +299,24 @@ export default function Onboarding() {
       if (!userId) throw new Error('Not authenticated.')
 
       const { allowed, reason } = await checkCanCreateOrg(userId)
-      if (!allowed) return setError(reason)
+      if (!allowed) {
+        setSaving(false)
+        return setError(reason)
+      }
 
-      const { data, error: fnErr } = await supabase
-        .rpc('create_organization', { org_name: name, plan_id: selectedPlanId })
-      if (fnErr) throw fnErr
+      if (selectedPlan && selectedPlan.price_monthly > 0) {
+        // Paid plan: charge first via HelcimPay. The org is only created
+        // in handlePaymentSuccess, once Helcim confirms the charge.
+        // `saving` stays true until that resolves (success or error).
+        openHelcimPayment()
+        return
+      }
 
-      const org = typeof data === 'string' ? JSON.parse(data) : data
-      localStorage.setItem('activeOrgId', org.id)
-      await refresh()
-      navigate('/', { replace: true })
+      // Free plan: no payment step needed.
+      await finishCreateOrg(null)
 
     } catch (err) {
       setError(err.message || 'Something went wrong.')
-    } finally {
       setSaving(false)
     }
   }
@@ -321,12 +380,21 @@ export default function Onboarding() {
             </div>
           )}
 
+          {selectedPlan && selectedPlan.price_monthly > 0 && (
+            <p style={{ fontSize: 12, color: '#64748b', marginTop: -14, marginBottom: 20 }}>
+              You'll be asked for payment details before your organization is created.
+              Refundable within 15 days.
+            </p>
+          )}
+
           <button
             className="onboarding-btn"
             onClick={handleCreate}
             disabled={saving || !orgName.trim() || !selectedPlanId}
           >
-            {saving ? 'Creating…' : 'Create Organization →'}
+            {saving
+              ? (selectedPlan?.price_monthly > 0 ? 'Processing payment…' : 'Creating…')
+              : (selectedPlan?.price_monthly > 0 ? 'Continue to payment →' : 'Create Organization →')}
           </button>
 
           <div className="onboarding-divider" />

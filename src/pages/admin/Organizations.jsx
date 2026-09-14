@@ -321,6 +321,10 @@ export default function Organizations() {
   const [addingMember, setAddingMember]   = useState({})
   const [memberError, setMemberError]     = useState({})
 
+  // For Refund eligibility check
+  const [refundEligibility, setRefundEligibility] = useState({}) // orgId -> {eligible, reason, amount}
+  const [refunding, setRefunding] = useState({})
+
   useEffect(() => {
     // 2. ONLY redirect if the context has FINISHED loading AND you aren't an admin
     if (!contextLoading && !isSuperAdmin) { navigate('/'); return }
@@ -405,14 +409,47 @@ export default function Organizations() {
     }
   }
 
-  function toggleExpand(orgId) {
-    if (expandedId === orgId) {
-      setExpandedId(null)
-    } else {
-      setExpandedId(orgId)
-      if (!members[orgId]) fetchMembers(orgId)
+  async function fetchRefundEligibility(orgId) {
+  const { data, error } = await supabase.rpc('get_refund_eligibility', { org_id_input: orgId })
+  if (!error) setRefundEligibility(prev => ({ ...prev, [orgId]: data }))
+}
+
+  async function handleRefund(orgId) {
+    if (!window.confirm('Refund this organization and downgrade it to the free plan? This cannot be undone.')) return
+    setRefunding(prev => ({ ...prev, [orgId]: true }))
+    setPlanMessage(prev => ({ ...prev, [orgId]: '' }))
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      const res = await fetch('/api/helcim-refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ orgId }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Refund failed')
+
+      setPlanMessage(prev => ({ ...prev, [orgId]: 'Refunded and downgraded to free.' }))
+      await fetchOrgs()
+      await refreshOrgs()
+      await fetchRefundEligibility(orgId)
+    } catch (err) {
+      setPlanMessage(prev => ({ ...prev, [orgId]: err.message || 'Refund failed.' }))
+    } finally {
+      setRefunding(prev => ({ ...prev, [orgId]: false }))
     }
   }
+
+  function toggleExpand(orgId) {
+  if (expandedId === orgId) {
+    setExpandedId(null)
+  } else {
+    setExpandedId(orgId)
+    if (!members[orgId]) fetchMembers(orgId)
+    fetchRefundEligibility(orgId)
+  }
+}
 
   function startEditName(org, e) {
     e.stopPropagation() // don't also toggle the card expand/collapse
@@ -766,6 +803,17 @@ export default function Organizations() {
                           disabled={planUpdating[org.id] || !plans.length}
                         >
                           {planUpdating[org.id] ? 'Saving…' : 'Assign Plan'}
+
+                          {refundEligibility[org.id]?.eligible && (
+                            <button
+                              className="orgs-btn orgs-btn--danger"
+                              style={{ marginLeft: 8 }}
+                              onClick={() => handleRefund(org.id)}
+                              disabled={refunding[org.id]}
+                            >
+                              {refunding[org.id] ? 'Refunding…' : `Refund $${refundEligibility[org.id].amount}`}
+                            </button>
+                          )}
                         </button>
                       </div>
                       <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>

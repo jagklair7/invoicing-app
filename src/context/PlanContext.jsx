@@ -12,6 +12,16 @@ const PLAN_DEFAULTS = {
   enterprise: { payroll: true,  pay_stub_pdf: true,  ytd: true,  t4: true,  multi_org: true,  max_employees: -1, max_invoices: -1, max_orgs: -1 },
 }
 
+// Subscription statuses that permit actually using paid-plan features.
+// Anything else (e.g. 'canceled', a future 'past_due', or a status that
+// somehow slipped through create_organization's payment gate as anything
+// other than 'active') falls back to free-tier limits here, independent
+// of whatever plan_name is stored on the row.
+const USABLE_STATUSES = new Set(['active', 'trialing'])
+function isSubscriptionUsable(status) {
+  return status == null || USABLE_STATUSES.has(status)
+}
+
 function normalizeFeatures(rawFeatures = {}) {
   if (typeof rawFeatures !== 'object' || rawFeatures === null) {
     return {}
@@ -77,6 +87,9 @@ export function PlanProvider({ children }) {
 
   // Helper: check if a feature is available
   function can(feature) {
+    if (!isSubscriptionUsable(features.status)) {
+      return !!PLAN_DEFAULTS.free[feature]
+    }
     const value = features[feature]
     if (typeof value === 'boolean') return value
     return !!PLAN_DEFAULTS[features.plan_name]?.[feature]
@@ -84,7 +97,9 @@ export function PlanProvider({ children }) {
 
   // Helper: check if under a numeric limit (-1 = unlimited)
   function withinLimit(limitKey, currentCount) {
-    const limit = features[limitKey]
+    const limit = isSubscriptionUsable(features.status)
+      ? features[limitKey]
+      : PLAN_DEFAULTS.free[limitKey]
     if (limit === -1) return true
     return currentCount < limit
   }
