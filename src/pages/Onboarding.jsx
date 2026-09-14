@@ -53,6 +53,28 @@ const css = `
   line-height: 1.5;
 }
 
+.onboarding-resume {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
+}
+
+.onboarding-resume-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 4px;
+}
+
+.onboarding-resume-body {
+  font-size: 13px;
+  color: #78350f;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
 .onboarding-field {
   display: flex;
   flex-direction: column;
@@ -171,6 +193,11 @@ const css = `
 .onboarding-btn:hover:not(:disabled) { background: #0a5f63; }
 .onboarding-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.onboarding-btn--secondary {
+  background: #d97706;
+}
+.onboarding-btn--secondary:hover:not(:disabled) { background: #b45309; }
+
 .onboarding-error {
   font-size: 13px;
   color: #ef4444;
@@ -212,6 +239,8 @@ export default function Onboarding() {
   const [loadingPlans, setLoadingPlans] = useState(true)
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState('')
+  const [pendingPayment, setPendingPayment] = useState(null) // row from pending_org_payments, or null
+  const [resuming, setResuming] = useState(false)
   const { refresh } = useOrg()
   const navigate    = useNavigate()
 
@@ -229,21 +258,63 @@ export default function Onboarding() {
       setLoadingPlans(false)
     }
     fetchPlans()
+    checkForPendingPayment()
   }, [])
+
+  // If a previous session's payment succeeded but org creation didn't
+  // finish, this surfaces it so the user can resume without paying again.
+  async function checkForPendingPayment() {
+    const { data: userData } = await supabase.auth.getUser()
+    const userId = userData?.user?.id
+    if (!userId) return
+
+    const { data } = await supabase
+      .from('pending_org_payments')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) setPendingPayment(data)
+  }
+
+  async function resolvePendingPayment(pendingPaymentId) {
+    const { data, error: resolveErr } = await supabase
+      .rpc('resolve_pending_org_payment', { pending_payment_id: pendingPaymentId })
+    if (resolveErr) throw resolveErr
+
+    const org = typeof data === 'string' ? JSON.parse(data) : data
+    localStorage.setItem('activeOrgId', org.id)
+    await refresh()
+    navigate('/', { replace: true })
+  }
+
+  async function handleResume() {
+    if (!pendingPayment) return
+    setResuming(true)
+    setError('')
+    try {
+      await resolvePendingPayment(pendingPayment.id)
+    } catch (err) {
+      setError(
+        err.message ||
+        'Still unable to finish setting up your organization. Your payment is safely on file — try again in a moment, or contact support.'
+      )
+      setResuming(false)
+    }
+  }
 
   const selectedPlan = plans.find(p => p.id === selectedPlanId) || null
 
-  // Creates the org via the create_organization RPC. helcimTransactionId
-  // is null for the free plan; for paid plans it must be a real Helcim
-  // transaction id or the RPC itself will reject the insert (see the
-  // migration — this is the actual enforcement point, not just this UI).
-  async function finishCreateOrg(helcimTransactionId) {
+  async function finishCreateOrg() {
     try {
       const { data, error: fnErr } = await supabase
         .rpc('create_organization', {
           org_name: orgName.trim(),
           plan_id: selectedPlanId,
-          helcim_transaction_id: helcimTransactionId,
+          helcim_transaction_id: null,
         })
       if (fnErr) throw fnErr
 
@@ -252,27 +323,66 @@ export default function Onboarding() {
       await refresh()
       navigate('/', { replace: true })
     } catch (err) {
-      setError(
-        err.message ||
-        'Something went wrong creating your organization after payment. Contact support with your payment confirmation.'
-      )
+      setError(err.message || 'Something went wrong.')
     } finally {
       setSaving(false)
     }
   }
 
-  // NOTE: `txn?.transactionId` below is an assumed field name for
-  // HelcimPay.js's SUCCESS payload — verify against a real console.log(txn)
-  // during testing. If the field name is wrong, transactionId will end up
-  // null, the warning below will fire, and create_organization will
-  // correctly refuse to activate the paid plan (rather than silently
-  // activating without a valid payment reference).
+  // NOTE: `txn?.transactionId` is an assumed field name for HelcimPay.js's
+  // SUCCESS payload — verify against a real console.log(txn) during testing.
   async function handlePaymentSuccess(txn) {
     const transactionId = txn?.transactionId ?? txn?.data?.transactionId ?? null
     if (!transactionId) {
       console.warn('Helcim payment succeeded but no transactionId was found on the payload:', txn)
+      setError('Payment succeeded but we could not read the transaction reference. Contact support — do not pay again.')
+      setSaving(false)
+      return
     }
-    await finishCreateOrg(transactionId ? String(transactionId) : null)
+
+    try {
+      // Record the successful payment FIRST, as its own simple insert,
+      // before attempting the multi-table org creation. If org creation
+      // fails after this point, the payment is never lost — it just sits
+      // here as resumable.
+      const { data: userData } = await supabase.auth.getUser()
+      const { data: pending, error: insertErr } = await supabase
+        .from('pending_org_payments')
+        .insert({
+          user_id: userData.user.id,
+          org_name: orgName.trim(),
+          plan_id: selectedPlanId,
+          helcim_transaction_id: String(transactionId),
+          amount: selectedPlan?.price_monthly ?? 0,
+        })
+        .select()
+        .single()
+
+      if (insertErr) {
+        // This is the one remaining gap: if even this simple insert fails,
+        // the payment genuinely isn't recorded anywhere. Surface the
+        // transaction id directly so support can act on it manually.
+        setError(
+          `Payment succeeded (transaction ${transactionId}) but we could not save that to your account. ` +
+          `Contact support with this transaction ID — do not pay again.`
+        )
+        setSaving(false)
+        return
+      }
+
+      await resolvePendingPayment(pending.id)
+
+    } catch (err) {
+      // Payment is safely recorded in pending_org_payments even though
+      // this attempt to finish org creation failed — resume is available.
+      setPendingPayment(prev => prev)
+      await checkForPendingPayment()
+      setError(
+        err.message ||
+        'Payment succeeded but we hit an error finishing setup. Your payment is on file — click "Resume setup" below to try again.'
+      )
+      setSaving(false)
+    }
   }
 
   function handlePaymentError(msg) {
@@ -305,15 +415,11 @@ export default function Onboarding() {
       }
 
       if (selectedPlan && selectedPlan.price_monthly > 0) {
-        // Paid plan: charge first via HelcimPay. The org is only created
-        // in handlePaymentSuccess, once Helcim confirms the charge.
-        // `saving` stays true until that resolves (success or error).
         openHelcimPayment()
         return
       }
 
-      // Free plan: no payment step needed.
-      await finishCreateOrg(null)
+      await finishCreateOrg()
 
     } catch (err) {
       setError(err.message || 'Something went wrong.')
@@ -340,6 +446,24 @@ export default function Onboarding() {
             You're almost in! Set up your organization to get started.
             You can always change this later in Settings.
           </p>
+
+          {pendingPayment && (
+            <div className="onboarding-resume">
+              <div className="onboarding-resume-title">Payment already received</div>
+              <div className="onboarding-resume-body">
+                We received your payment for "{pendingPayment.org_name}" but didn't finish setting up
+                your organization. Click below to finish — you won't be charged again.
+              </div>
+              <button
+                className="onboarding-btn onboarding-btn--secondary"
+                style={{ marginTop: 0 }}
+                onClick={handleResume}
+                disabled={resuming}
+              >
+                {resuming ? 'Finishing setup…' : 'Resume setup →'}
+              </button>
+            </div>
+          )}
 
           {error && <div className="onboarding-error">{error}</div>}
 
@@ -390,7 +514,7 @@ export default function Onboarding() {
           <button
             className="onboarding-btn"
             onClick={handleCreate}
-            disabled={saving || !orgName.trim() || !selectedPlanId}
+            disabled={saving || resuming || !orgName.trim() || !selectedPlanId}
           >
             {saving
               ? (selectedPlan?.price_monthly > 0 ? 'Processing payment…' : 'Creating…')

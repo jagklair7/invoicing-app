@@ -325,10 +325,15 @@ export default function Organizations() {
   const [refundEligibility, setRefundEligibility] = useState({}) // orgId -> {eligible, reason, amount}
   const [refunding, setRefunding] = useState({})
 
+  // Stuck-Payment Panel
+  const [stuckPayments, setStuckPayments] = useState([])
+  const [stuckRefunding, setStuckRefunding] = useState({})
+
   useEffect(() => {
     // 2. ONLY redirect if the context has FINISHED loading AND you aren't an admin
     if (!contextLoading && !isSuperAdmin) { navigate('/'); return }
     fetchOrgs()
+    fetchStuckPayments()
   }, [isSuperAdmin, contextLoading, navigate])
 
     // 3. Show a spinner or nothing while the check is in progress
@@ -367,6 +372,36 @@ export default function Organizations() {
     }
     setLoading(false)
   }
+
+  async function fetchStuckPayments() {
+  const { data } = await supabase
+    .from('pending_org_payments')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+  setStuckPayments(data || [])
+}
+
+  async function handleRefundStuckPayment(pendingPaymentId) {
+  if (!window.confirm('Refund this stuck payment? The customer will need to sign up again if they still want the org.')) return
+  setStuckRefunding(prev => ({ ...prev, [pendingPaymentId]: true }))
+  try {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
+    const res = await fetch('/api/helcim-refund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pendingPaymentId }),
+    })
+    const result = await res.json()
+    if (!res.ok) throw new Error(result.error || 'Refund failed')
+    await fetchStuckPayments()
+  } catch (err) {
+    alert(err.message || 'Refund failed.')
+  } finally {
+    setStuckRefunding(prev => ({ ...prev, [pendingPaymentId]: false }))
+  }
+}
 
   async function fetchMembers(orgId) {
     const { data } = await supabase
@@ -677,6 +712,31 @@ export default function Organizations() {
             {addSuccess && <div className="orgs-success">✓ {addSuccess}</div>}
           </form>
         </div>
+
+        {stuckPayments.length > 0 && (
+          <div className="orgs-add-card" style={{ borderColor: '#fecaca', background: '#fff5f5' }}>
+            <div className="orgs-add-title" style={{ color: '#e53e3e' }}>
+              Payments Needing Attention ({stuckPayments.length})
+            </div>
+            {stuckPayments.map(p => (
+              <div key={p.id} className="orgs-member-row">
+                <div>
+                  <div className="orgs-member-email">{p.org_name} — ${p.amount}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Paid {new Date(p.created_at).toLocaleString()} · txn {p.helcim_transaction_id}
+                  </div>
+                </div>
+                <button
+                  className="orgs-btn orgs-btn--danger"
+                  onClick={() => handleRefundStuckPayment(p.id)}
+                  disabled={stuckRefunding[p.id]}
+                >
+                  {stuckRefunding[p.id] ? 'Refunding…' : 'Refund'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Org list */}
         {loading ? (

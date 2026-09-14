@@ -1,10 +1,11 @@
 /**
  * /api/helcim-refund.js
- * Vercel serverless function — processes a refund for a paid org
- * subscription, within the 15-day refund policy.
+ * Vercel serverless function — processes a refund for either:
+ *   (a) a paid org subscription ({ orgId }), or
+ *   (b) a payment that never resolved into an org ({ pendingPaymentId })
+ * Both within the 15-day refund policy.
  *
- * Called by admin/Organizations.jsx with { orgId } and the caller's
- * Supabase auth token in the Authorization header.
+ * Called with the caller's Supabase auth token in the Authorization header.
  *
  * Required env vars:
  *   HELCIM_API_TOKEN    — same as helcim-init.js
@@ -22,9 +23,9 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { orgId } = req.body ?? {}
-    if (!orgId) {
-      return res.status(400).json({ error: 'orgId is required' })
+    const { orgId, pendingPaymentId } = req.body ?? {}
+    if (!orgId && !pendingPaymentId) {
+      return res.status(400).json({ error: 'orgId or pendingPaymentId is required' })
     }
 
     const authHeader = req.headers.authorization ?? ''
@@ -40,18 +41,16 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Server not configured — contact support' })
     }
 
-    // Scoped to the caller's own JWT, so auth.uid() inside the RPCs below
-    // resolves to this user — the is_super_admin check happens in Postgres,
-    // not here.
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     })
 
-    // 1. Re-check eligibility server-side. Never trust a client-supplied
-    //    "yes it's eligible" — this call re-derives it from the DB and
-    //    also enforces the super-admin check.
-    const { data: eligibility, error: eligErr } = await supabase
-      .rpc('get_refund_eligibility', { org_id_input: orgId })
+    // 1. Re-check eligibility server-side, branching by which kind of
+    //    record this is. Both RPCs enforce super-admin authorization.
+    const eligibilityRpc = orgId ? 'get_refund_eligibility' : 'get_pending_payment_refund_eligibility'
+    const eligibilityArgs = orgId ? { org_id_input: orgId } : { pending_payment_id: pendingPaymentId }
+
+    const { data: eligibility, error: eligErr } = await supabase.rpc(eligibilityRpc, eligibilityArgs)
     if (eligErr) {
       return res.status(403).json({ error: eligErr.message })
     }
@@ -66,10 +65,8 @@ export default async function handler(req, res) {
     }
 
     // 2. Actually refund the charge through Helcim.
-    // NOTE: ipAddress here is the refund request's origin (this server's
-    // view of the admin's IP), not necessarily the original payer's IP —
-    // Helcim's docs don't fully clarify which is expected. Confirm with
-    // Helcim support if a refund is rejected for an IP-related reason.
+    // NOTE: ipAddress here is the refund request's origin, not necessarily
+    // the original payer's IP — see prior flag on this endpoint.
     const ipAddress =
       (req.headers['x-forwarded-for']?.split(',')[0]?.trim()) ||
       req.socket?.remoteAddress ||
@@ -81,7 +78,7 @@ export default async function handler(req, res) {
         'accept': 'application/json',
         'content-type': 'application/json',
         'api-token': apiToken,
-        'idempotency-key': `refund-${orgId}-${Date.now()}`,
+        'idempotency-key': `refund-${orgId || pendingPaymentId}-${Date.now()}`,
       },
       body: JSON.stringify({
         originalTransactionId: Number(eligibility.helcim_transaction_id),
@@ -104,22 +101,19 @@ export default async function handler(req, res) {
       return res.status(helcimRes.status).json({ error: JSON.stringify(data) })
     }
 
-    // 3. Money is back with the customer — now mark it refunded locally
-    //    and downgrade the org to free. This RPC re-validates eligibility
-    //    one more time (defense in depth) before writing anything.
-    const { data: updated, error: markErr } = await supabase
-      .rpc('mark_subscription_refunded', { org_id_input: orgId })
+    // 3. Mark refunded locally, branching the same way as step 1.
+    const markRpc = orgId ? 'mark_subscription_refunded' : 'mark_pending_payment_refunded'
+    const markArgs = orgId ? { org_id_input: orgId } : { pending_payment_id: pendingPaymentId }
+
+    const { data: updated, error: markErr } = await supabase.rpc(markRpc, markArgs)
     if (markErr) {
-      // Refund succeeded at Helcim but DB update failed — surface this
-      // loudly, don't swallow it, since the org is now in an inconsistent
-      // state (refunded with Helcim, still shown as paid in your DB).
-      console.error('Refund succeeded at Helcim but mark_subscription_refunded failed:', markErr)
+      console.error('Refund succeeded at Helcim but marking refunded failed:', markErr)
       return res.status(500).json({
-        error: 'Refund was processed by Helcim but updating the record failed — update org_subscriptions manually for org ' + orgId,
+        error: `Refund was processed by Helcim but updating the record failed — resolve manually for ${orgId ? 'org ' + orgId : 'pending payment ' + pendingPaymentId}`,
       })
     }
 
-    return res.status(200).json({ refund: data, subscription: updated })
+    return res.status(200).json({ refund: data, record: updated })
 
   } catch (err) {
     console.error('helcim-refund unhandled error:', err)
