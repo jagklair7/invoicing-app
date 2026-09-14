@@ -843,7 +843,7 @@ export default function Organizations() {
                       ))}
 
                       {/* Billing + plan controls */}
-                      <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'end' }}>
+                      <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: refundEligibility[org.id]?.eligible ? '1fr auto auto' : '1fr auto', gap: 12, alignItems: 'end' }}>
                         <div className="orgs-field">
                           <label className="orgs-label">Organization Plan</label>
                           <select
@@ -864,7 +864,8 @@ export default function Organizations() {
                         >
                           {planUpdating[org.id] ? 'Saving…' : 'Assign Plan'}
 
-                          {refundEligibility[org.id]?.eligible && (
+                        </button>
+                        {refundEligibility[org.id]?.eligible && (
                             <button
                               className="orgs-btn orgs-btn--danger"
                               style={{ marginLeft: 8 }}
@@ -874,7 +875,6 @@ export default function Organizations() {
                               {refunding[org.id] ? 'Refunding…' : `Refund $${refundEligibility[org.id].amount}`}
                             </button>
                           )}
-                        </button>
                       </div>
                       <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
                         Pick the plan tier for this organization, then click Assign Plan to save your change.
