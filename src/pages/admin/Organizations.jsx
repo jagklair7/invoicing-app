@@ -721,7 +721,7 @@ export default function Organizations() {
             {stuckPayments.map(p => (
               <div key={p.id} className="orgs-member-row">
                 <div>
-                  <div className="orgs-member-email">{p.org_name} — ${p.amount}</div>
+                  <div className="orgs-member-email">{p.org_name} — ${Number(p.amount).toFixed(2)}</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>
                     Paid {new Date(p.created_at).toLocaleString()} · txn {p.helcim_transaction_id}
                   </div>

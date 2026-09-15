@@ -38,7 +38,8 @@ function loadHelcimScript() {
   })
 }
 
-export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, onError }) {
+
+export function useHelcimPay({ amount, taxAmount, invoiceNumber, customerCode, onSuccess, onError }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const secretTokenRef = useRef(null)
@@ -64,13 +65,14 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
     try {
       // 1. Load HelcimPay.js script
       await loadHelcimScript()
-
+    
       // 2. Initialize checkout session via our back-end
       const res = await fetch('/api/helcim-init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: Number(amount).toFixed(2),
+          taxAmount: taxAmount != null ? Number(taxAmount).toFixed(2) : undefined,
           invoiceNumber: invoiceNumber ?? undefined,
           customerCode: customerCode ?? undefined,
         }),
@@ -124,7 +126,7 @@ export function useHelcimPay({ amount, invoiceNumber, customerCode, onSuccess, o
     } finally {
       setLoading(false)
     }
-  }, [amount, invoiceNumber, customerCode, onSuccess, onError, cleanup])
+  }, [amount, taxAmount, invoiceNumber, customerCode, onSuccess, onError, cleanup])
 
   return { openPayment, loading, error }
 }

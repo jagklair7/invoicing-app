@@ -244,7 +244,7 @@ export default function Onboarding() {
   const { refresh } = useOrg()
   const navigate    = useNavigate()
 
-  useEffect(() => {
+    useEffect(() => {
     const fetchPlans = async () => {
       const { data, error: plansErr } = await supabase
         .from('plans')
@@ -306,7 +306,19 @@ export default function Onboarding() {
     }
   }
 
+  const GST_RATE = 0.05
+
+  function calcGst(basePrice) {
+    return Math.round(basePrice * GST_RATE * 100) / 100
+  }
+  function calcTotal(basePrice) {
+    return Math.round(basePrice * (1 + GST_RATE) * 100) / 100
+  }
+  
   const selectedPlan = plans.find(p => p.id === selectedPlanId) || null
+  const baseAmount = selectedPlan?.price_monthly || 0
+  const gstAmount = calcGst(baseAmount)
+  const totalAmount = calcTotal(baseAmount)
 
   async function finishCreateOrg() {
     try {
@@ -353,7 +365,9 @@ export default function Onboarding() {
           org_name: orgName.trim(),
           plan_id: selectedPlanId,
           helcim_transaction_id: String(transactionId),
-          amount: selectedPlan?.price_monthly ?? 0,
+          amount: totalAmount,
+          base_amount: baseAmount,
+          gst_amount: gstAmount,
         })
         .select()
         .single()
@@ -506,8 +520,25 @@ export default function Onboarding() {
 
           {selectedPlan && selectedPlan.price_monthly > 0 && (
             <p style={{ fontSize: 12, color: '#64748b', marginTop: -14, marginBottom: 20 }}>
-              You'll be asked for payment details before your organization is created.
-              Refundable within 15 days.
+              {selectedPlan && selectedPlan.price_monthly > 0 && (
+                <div style={{
+                  fontSize: 13, color: '#475569', marginTop: -8, marginBottom: 20,
+                  background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Subtotal</span><span>${baseAmount.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b' }}>
+                    <span>GST (5%)</span><span>${gstAmount.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#0f172a', marginTop: 6, paddingTop: 6, borderTop: '1px solid #e2e8f0' }}>
+                    <span>Total (charged monthly)</span><span>${totalAmount.toFixed(2)}</span>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8' }}>
+                    Refundable within 15 days.
+                  </div>
+                </div>
+              )}
             </p>
           )}
 
@@ -518,7 +549,7 @@ export default function Onboarding() {
           >
             {saving
               ? (selectedPlan?.price_monthly > 0 ? 'Processing payment…' : 'Creating…')
-              : (selectedPlan?.price_monthly > 0 ? 'Continue to payment →' : 'Create Organization →')}
+              : (selectedPlan?.price_monthly > 0 ? `Continue to payment (${totalAmount.toFixed(2)}) →` : 'Create Organization →')}
           </button>
 
           <div className="onboarding-divider" />

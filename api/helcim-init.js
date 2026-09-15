@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { amount, invoiceNumber, customerCode } = req.body ?? {}
+    const { amount, taxAmount,invoiceNumber, customerCode } = req.body ?? {}
 
     if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ error: 'Valid amount is required' })
@@ -33,6 +33,12 @@ export default async function handler(req, res) {
       currency: 'CAD',
     }
 
+    // Per Helcim docs: taxAmount is informational (level 2 processing rates)
+    // and must already be included in `amount` — it does not add to the
+    // charge on its own.
+    if (taxAmount != null) payload.taxAmount = Number(Number(taxAmount).toFixed(2))
+    if (customerCode)  payload.customerCode  = String(customerCode)
+      
     // invoiceNumber omitted — Helcim validation is strict about format
    // if (invoiceNumber) payload.invoiceNumber = String(invoiceNumber)
     if (customerCode)  payload.customerCode  = String(customerCode)
