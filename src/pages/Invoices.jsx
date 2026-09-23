@@ -960,8 +960,18 @@ export default function Invoices() {
     return true
   }
 
+  const isUnpaidInvoice = (inv) => {
+    const hasPayment = Number(inv.total || 0) > 0 && (inv.status === 'sent' || inv.status === 'partial' || inv.status === 'draft')
+    return hasPayment && (inv.status !== 'paid' && inv.status !== 'void')
+  }
+
   const filtered = invoices.filter(inv => {
-    const matchesStatus = filter === 'all' ? true : inv.status === filter
+    const normalizedFilter = filter === 'unpaid' ? 'unpaid' : filter
+    const matchesStatus = normalizedFilter === 'all'
+      ? true
+      : normalizedFilter === 'unpaid'
+        ? isUnpaidInvoice(inv)
+        : inv.status === normalizedFilter
     const matchesSentRange = matchesDateRange(inv.date, sentDateFrom, sentDateTo)
     return matchesStatus && matchesSentRange
   })
@@ -992,7 +1002,7 @@ export default function Invoices() {
         {/* Filters — horizontally scrollable on mobile */}
         <div className="mb-4 space-y-3">
           <div className="inv-filter-scroll">
-            {['all', 'draft', 'sent', 'partial', 'paid', 'void'].map(f => (
+            {['all', 'draft', 'sent', 'partial', 'unpaid', 'paid', 'void'].map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -1018,6 +1028,18 @@ export default function Invoices() {
               onChange={e => setSentDateTo(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
             />
+            {(sentDateFrom || sentDateTo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSentDateFrom('')
+                  setSentDateTo('')
+                }}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         </div>
 
