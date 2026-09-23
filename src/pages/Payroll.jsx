@@ -595,7 +595,7 @@ function generateRemittancePDF(run, entry, employee, orgName) {
   const divider = () => { doc.setDrawColor(...border); doc.line(margin, y - 6, pageWidth - margin, y - 6) }
 
   // Employee-withheld amounts
-  sectionTitle('Withheld from employee')
+  sectionTitle('Employee Deductions')
   row('Gross pay', fmtCAD(entry.gross))
   row('CPP', fmtCAD(entry.cpp))
   if (Number(entry.cpp2) > 0) row('CPP2', fmtCAD(entry.cpp2))
