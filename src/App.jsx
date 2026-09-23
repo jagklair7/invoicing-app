@@ -7,6 +7,8 @@ import { supabase } from './app/supabaseClient'
 import Layout            from './components/Layout'
 import InvoiceForm       from './pages/InvoiceForm.jsx'
 import InvoiceView       from './pages/InvoiceView.jsx'
+import InvoicePublic     from './pages/InvoicePublic.jsx'
+import RecurringInvoices from './pages/RecurringInvoices.jsx'
 import Customers         from './pages/Customers'
 import Invoices          from './pages/Invoices'
 import Login             from './pages/Login.jsx'
@@ -112,6 +114,7 @@ export default function App() {
       <Routes>
         {/* ── Fully public, no Layout/shell at all ──────────────────── */}
         <Route path="/q/:token" element={<QuotePublic />} />
+        <Route path="/i/:token" element={<InvoicePublic />} />
 
         {/* ── Everything else lives inside the app shell ────────────── */}
         <Route path="/*" element={
@@ -160,6 +163,10 @@ export default function App() {
               } />
               <Route path="/invoices/:id" element={
                 <OrgGuard session={session}><InvoiceView /></OrgGuard>
+              } />
+
+              <Route path="/recurring-invoices" element={
+                <OrgGuard session={session}><RecurringInvoices /></OrgGuard>
               } />
 
               <Route path="/vendors" element={

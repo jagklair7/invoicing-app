@@ -403,6 +403,26 @@ const css = `
     letter-spacing: 0.03em;
   }
 
+  /* ── Pay Now link box (view mode) ── */
+  .inv-paylink-box {
+    margin-top: 24px;
+    background: var(--teal-lt);
+    border: 1.5px solid #b2e0e2;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .inv-paylink-url {
+    font-size: 12px;
+    color: var(--teal);
+    font-family: monospace;
+    word-break: break-all;
+  }
+
   /* ══════════════════════════════════════════
      EDIT MODE
   ══════════════════════════════════════════ */
@@ -813,8 +833,12 @@ export default function InvoiceView() {
   const [sendNote, setSendNote]           = useState('')
   const [sendResult, setSendResult]       = useState(null)
 
-  // Pay Now (in-house)
+  // Pay Now (in-house, staff-initiated card charge — unchanged)
   const [showPayModal, setShowPayModal] = useState(false)
+
+  // Pay Now (customer-facing public link toggle — new)
+  const [onlinePaymentEnabled, setOnlinePaymentEnabled] = useState(false)
+  const [linkCopied, setLinkCopied]                     = useState(false)
 
   // Edit state
   const [editNumber, setEditNumber] = useState('')
@@ -842,6 +866,7 @@ export default function InvoiceView() {
       setInvoice(data)
       setCustomer(data.customers)
       setEditNotes(data.notes || '')
+      setOnlinePaymentEnabled(!!data.online_payment_enabled)
 
       const { data: settings } = await supabase
         .from('organization_settings')
@@ -885,12 +910,51 @@ export default function InvoiceView() {
     if (orgId) fetchInvoice()
   }, [id, orgId])   // same, but now a stable primitive string, not an object reference
 
+  // ── Pay Now (public link) toggle ──────────────────────────────────────────
+  // Persists immediately rather than waiting for the full Edit-mode save, so
+  // it can be flipped right from the Send modal — "before sending" — without
+  // entering edit mode. invoices.public_token already exists on every row
+  // (default gen_random_uuid() from the migration), so no token generation
+  // is needed here.
+  async function toggleOnlinePayment(checked) {
+    setOnlinePaymentEnabled(checked)
+    try {
+      const { error } = await supabase
+        .from('invoices')
+        .update({ online_payment_enabled: checked })
+        .eq('id', id)
+        .eq('org_id', activeOrg.orgId)
+      if (error) throw error
+      setInvoice(prev => ({ ...prev, online_payment_enabled: checked }))
+    } catch (err) {
+      console.error('Failed to update Pay Now setting:', err)
+      setOnlinePaymentEnabled(!checked) // revert on failure
+    }
+  }
+
+  const publicPayUrl = invoice?.public_token
+    ? `${window.location.origin}/i/${invoice.public_token}`
+    : null
+
+  function copyPayLink() {
+    if (!publicPayUrl) return
+    navigator.clipboard.writeText(publicPayUrl)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
+
   // ── Send email ─────────────────────────────────────────────────────────────
   // Sends a tiny JSON payload — no PDF/HTML built here anymore. The
   // send-invoice Edge Function fetches the invoice/customer/items itself
   // and generates the PDF + email HTML server-side. This is what fixes the
   // "works on cellular, fails on some WiFi" issue: the browser no longer
   // uploads a multi-hundred-KB base64 PDF, just this small body.
+  //
+  // FLAG: added includePayNow + payUrl to the body below so the send-invoice
+  // function CAN include a Pay Now link/button in the email — but I don't
+  // have that function's source, so it doesn't actually do anything with
+  // these fields yet. Update send-invoice to read them (or send me that
+  // file and I'll do it) before this has any real effect on the email.
   async function handleSendInvoice() {
     if (!sendEmail.trim()) return
     setSending(true)
@@ -903,6 +967,8 @@ export default function InvoiceView() {
           to: sendEmail.trim(),
           sendNote: sendNote || undefined,
           companyName: orgSettings?.company_name || activeOrg?.name,
+          includePayNow: onlinePaymentEnabled,       // FLAG: send-invoice must be updated to use this
+          payUrl: onlinePaymentEnabled ? publicPayUrl : undefined, // FLAG: same
         },
       })
 
@@ -983,6 +1049,7 @@ export default function InvoiceView() {
     setIsEditing(false)
     setEditNotes(invoice?.notes || '')
     setEditPO(invoice?.po_number || '')
+    setOnlinePaymentEnabled(!!invoice?.online_payment_enabled)
   }
 
   // ── Live totals ────────────────────────────────────────────────────────────
@@ -1006,6 +1073,7 @@ export default function InvoiceView() {
           total:    editTotal,
           notes:    editNotes,
           po_number: editPO,
+          online_payment_enabled: onlinePaymentEnabled,
         })
         .eq('id', id)
         .eq('org_id', activeOrg.orgId)
@@ -1425,6 +1493,20 @@ export default function InvoiceView() {
                   </div>
                 )}
 
+                {onlinePaymentEnabled && publicPayUrl && (
+                  <div className="inv-paylink-box">
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#0d7377', marginBottom: 4 }}>
+                        Customer Pay Now link
+                      </div>
+                      <div className="inv-paylink-url">{publicPayUrl}</div>
+                    </div>
+                    <button className="inv-btn" onClick={copyPayLink}>
+                      {linkCopied ? '✓ Copied' : 'Copy link'}
+                    </button>
+                  </div>
+                )}
+
                 <div className="inv-footer-note">
                   {orgSettings?.gst_number && (
                     <div style={{ marginBottom: 6, fontWeight: 600, color: '#475569', fontSize: 13 }}>
@@ -1476,6 +1558,17 @@ export default function InvoiceView() {
                         value={editPO}
                         onChange={e => setEditPO(e.target.value)}
                       />
+                    </div>
+                    <div className="inv-field">
+                      <label className="inv-field-label">Online Payment</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569', paddingTop: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={onlinePaymentEnabled}
+                          onChange={e => setOnlinePaymentEnabled(e.target.checked)}
+                        />
+                        Show Pay Now link
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -1656,6 +1749,16 @@ export default function InvoiceView() {
                       </div>
                     )}
                   </div>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569' }}>
+                    <input
+                      type="checkbox"
+                      checked={onlinePaymentEnabled}
+                      onChange={e => toggleOnlinePayment(e.target.checked)}
+                    />
+                    Include a Pay Now link so the customer can pay online
+                  </label>
+
                   <div className="inv-field">
                     <label className="inv-field-label">Personal Note (optional)</label>
                     <textarea

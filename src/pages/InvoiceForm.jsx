@@ -39,6 +39,7 @@ export default function InvoiceForm() {
       due_date: addDays(today, DEFAULT_TERMS_DAYS),
       status: 'draft',
       notes: '',
+      online_payment_enabled: false,
     }
   })
   const [items, setItems] = useState([{ product_id: '', name: '', quantity: 1, unit_price: 0 }])
@@ -258,6 +259,16 @@ function handleProductSelect(idx, productId) {
             <option value="paid">Paid</option>
             <option value="void">Void</option>
           </select>
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={invoice.online_payment_enabled}
+              onChange={e => setInvoice({ ...invoice, online_payment_enabled: e.target.checked })}
+            />
+            Show Pay Now button on this invoice
+          </label>
         </div>
       </div>
 
