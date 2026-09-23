@@ -20,7 +20,7 @@
 //     up server-side by its public_token (service-role, bypassing RLS)
 //     and takes amount/status from that row, never from this client call.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 
@@ -174,6 +174,25 @@ const css = `
 const fmt = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
 const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '—')
 
+// Same script URL/loader as src/hooks/useHelcimPay.js — duplicated here
+// rather than imported because that hook also calls /api/helcim-init
+// directly (the staff-side endpoint), which this public page must not do.
+const HELCIM_JS_URL = 'https://secure.helcim.app/helcim-pay/services/start.js'
+
+function loadHelcimScript() {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${HELCIM_JS_URL}"]`)) {
+      resolve()
+      return
+    }
+    const script = document.createElement('script')
+    script.src = HELCIM_JS_URL
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load HelcimPay.js'))
+    document.head.appendChild(script)
+  })
+}
+
 export default function InvoicePublic() {
   const { token } = useParams()
   const [data, setData] = useState(null)
@@ -181,6 +200,23 @@ export default function InvoicePublic() {
   const [error, setError] = useState(null)
   const [paying, setPaying] = useState(false)
   const [payError, setPayError] = useState(null)
+  const listenerRef = useRef(null)
+
+  // Same cleanup pattern as src/hooks/useHelcimPay.js — removes the
+  // Helcim iframe and the window message listener. Without this, clicking
+  // "Pay Now" more than once (without a page reload) stacked up a new
+  // listener on every click instead of replacing the old one.
+  function cleanupHelcim() {
+    if (typeof window.removeHelcimPayIframe === 'function') {
+      window.removeHelcimPayIframe()
+    }
+    if (listenerRef.current) {
+      window.removeEventListener('message', listenerRef.current)
+      listenerRef.current = null
+    }
+  }
+
+  useEffect(() => () => cleanupHelcim(), [])
 
   useEffect(() => {
     loadInvoice()
@@ -208,7 +244,16 @@ export default function InvoicePublic() {
   async function handlePayNow() {
     setPaying(true)
     setPayError(null)
+    // Clear out any listener/iframe left over from a previous click before
+    // starting a new attempt.
+    cleanupHelcim()
     try {
+      // Load HelcimPay.js first — unlike the staff-side flow, nothing else
+      // on this public page ever loads it, so it's never present by the
+      // time this runs otherwise (that gap was flagged in the original
+      // draft's comment below, and turned out to be the actual cause).
+      await loadHelcimScript()
+
       const res = await fetch('/api/public-invoice-pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -219,24 +264,28 @@ export default function InvoicePublic() {
         throw new Error(session?.error || 'Could not start checkout')
       }
 
-      // Helcim's HelcimPay.js is expected to be loaded globally (script tag
-      // in index.html) — verify this against however Helcim is already
-      // loaded for the staff-side Charge Card flow.
+      // Helcim's HelcimPay.js is now guaranteed loaded by the await above.
       if (typeof window.appendHelcimPayIframe !== 'function') {
         throw new Error('Payment system unavailable — please contact us directly.')
       }
-      window.appendHelcimPayIframe(session.checkoutToken)
 
-      window.addEventListener('message', async (event) => {
+      const handleMessage = (event) => {
+        if (event.origin !== 'https://secure.helcim.app') return
         if (event.data?.eventName !== `helcim-pay-js-${session.checkoutToken}`) return
+        cleanupHelcim()
         if (event.data?.eventStatus === 'SUCCESS') {
-          await loadInvoice() // re-fetch to pick up server-confirmed paid status
+          loadInvoice() // re-fetch to pick up server-confirmed paid status
         } else {
           setPayError('Payment was not completed.')
         }
-      })
+      }
+      listenerRef.current = handleMessage
+      window.addEventListener('message', handleMessage)
+
+      window.appendHelcimPayIframe(session.checkoutToken)
     } catch (err) {
       setPayError(err.message)
+      cleanupHelcim()
     } finally {
       setPaying(false)
     }
