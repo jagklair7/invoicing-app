@@ -1,5 +1,5 @@
 // src/components/Layout.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
@@ -36,6 +36,18 @@ function InvIcon() {
     <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
       <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
       <path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
+// New — for Recurring Invoices. Matches the other 16x16 document-style icons
+// (EstIcon, QuoteIcon) but with a repeat/cycle arrow to signal recurrence,
+// rather than introducing an unrelated icon shape.
+function RecurringIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="1" width="10" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M5 5h6M5 8h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".6"/>
+      <path d="M5.5 11.5a2 2 0 0 1 2-2h1.3M10.8 9.5l-1.2-1.2M10.8 9.5l-1.2 1.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity=".8"/>
     </svg>
   )
 }
@@ -236,6 +248,7 @@ function pageTitleFor(pathname) {
     ['/products', 'Products'],
     ['/employees', 'Employees'],
     ['/payroll', 'Payroll'],
+    ['/recurring-invoices', 'Recurring Invoices'],
     ['/invoices', 'Invoices'],
     ['/estimates', 'Estimates'],
     ['/quotes', 'Quotes'],
@@ -263,12 +276,35 @@ export default function Layout({ children, session }) {
   const [sidebarWidth, setSidebarWidth] = useState(224)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
 
+  // Height of the bottom "Admin" block (Admin Panel/Analytics/Organizations/
+  // Settings/Logout). Same drag-to-resize idea as sidebarWidth above, just
+  // vertical: dragging the handle moves the boundary between the main nav
+  // list and this block up or down. bottomAnchorRef is a zero-height div
+  // pinned to the very bottom of the sidebar's flex column, so its position
+  // stays put regardless of adminHeight — that's what "up" and "down" are
+  // measured against.
+  const [adminHeight, setAdminHeight] = useState(200)
+  const [isResizingAdmin, setIsResizingAdmin] = useState(false)
+  const bottomAnchorRef = useRef(null)
+
   function resizeSidebar(event) {
     setSidebarWidth(Math.min(360, Math.max(180, event.clientX)))
   }
 
   function stopResizingSidebar() {
     setIsResizingSidebar(false)
+  }
+
+  function resizeAdminSection(event) {
+    const anchorY = bottomAnchorRef.current
+      ? bottomAnchorRef.current.getBoundingClientRect().top
+      : window.innerHeight
+    const newHeight = anchorY - event.clientY
+    setAdminHeight(Math.min(420, Math.max(120, newHeight)))
+  }
+
+  function stopResizingAdmin() {
+    setIsResizingAdmin(false)
   }
 
   // Close the drawer automatically whenever the route changes.
@@ -334,8 +370,15 @@ export default function Layout({ children, session }) {
 
   // Shared block of "everything else" nav items shown inside the mobile drawer
   // (desktop keeps these directly in the sidebar, unchanged).
+  // Recurring Invoices added here first, mirroring its position directly
+  // after Invoices in the desktop sidebar below. Gated on flags.invoices
+  // (not a separate flag) since it's a sub-feature of invoicing — flag me
+  // if you'd rather it have its own toggle.
   const drawerExtraNav = (
     <>
+      {flags.invoices !== false && (
+        <NavItem to="/recurring-invoices" label="Recurring Invoices" icon={<RecurringIcon />} onClick={() => setDrawerOpen(false)} />
+      )}
       {flags.products !== false && (
         <NavItem to="/products" label="Products" icon={<ProdIcon />} onClick={() => setDrawerOpen(false)} />
       )}
@@ -441,14 +484,46 @@ export default function Layout({ children, session }) {
           {flags.invoices !== false && (
             <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} />
           )}
+          {flags.invoices !== false && (
+            <NavItem to="/recurring-invoices" label="Recurring Invoices" icon={<RecurringIcon />} />
+          )}
           <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
           <NavItem to="/quotes" label="Quotes" icon={<QuoteIcon />} />
           <NavItem to="/vendors" label="Vendors" icon={<VendorIcon />} />
           <NavItem to="/purchase-orders" label="Purchase Orders" icon={<POIcon />} />
         </nav>
 
-        {/* Bottom nav */}
-        <div style={{ padding: '0 10px 10px', borderTop: '1px solid #f1f5f9', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {/* Drag handle — resizes the Admin block below by moving this
+            boundary up or down, same idea as the sidebar-width handle. */}
+        <div
+          role="separator"
+          aria-label="Resize admin section"
+          aria-orientation="horizontal"
+          title="Drag to resize the Admin section"
+          onPointerDown={event => {
+            event.currentTarget.setPointerCapture(event.pointerId)
+            setIsResizingAdmin(true)
+          }}
+          onPointerMove={event => {
+            if (isResizingAdmin) resizeAdminSection(event)
+          }}
+          onPointerUp={stopResizingAdmin}
+          onPointerCancel={stopResizingAdmin}
+          style={{
+            height: 6, margin: '0 10px', cursor: 'row-resize',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            touchAction: 'none', flexShrink: 0,
+          }}
+        >
+          <div style={{ width: 32, height: 3, borderRadius: 2, background: '#e2e8f0' }} />
+        </div>
+
+        {/* Bottom nav (Admin) — height set by adminHeight/the handle above */}
+        <div style={{
+          height: adminHeight, overflowY: 'auto', flexShrink: 0,
+          padding: '0 10px 10px', borderTop: '1px solid #f1f5f9', paddingTop: 10,
+          display: 'flex', flexDirection: 'column', gap: 2,
+        }}>
           <div style={{ padding: '0 6px 6px', fontSize: 10, fontWeight: 600, color: '#cbd5e1', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Admin
           </div>
@@ -504,6 +579,11 @@ export default function Layout({ children, session }) {
             </div>
           </div>
         )}
+
+        {/* Zero-height anchor pinned to the sidebar's bottom edge — see
+            resizeAdminSection's comment above for why this is the
+            measurement reference for "up" and "down". */}
+        <div ref={bottomAnchorRef} style={{ height: 0 }} />
 
         <div
           role="separator"
