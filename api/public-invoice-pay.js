@@ -21,14 +21,12 @@
  *
  * Required env vars (set in Vercel dashboard, never in source):
  *   HELCIM_API_TOKEN            — same one /api/helcim-init.js uses
- *   SUPABASE_URL                — same one used elsewhere in this app
- *   SUPABASE_SERVICE_ROLE_KEY   — FLAG: verify this is already set in
- *                                  Vercel; needed to read the invoice by
- *                                  public_token without an authenticated
- *                                  session. If it's not set yet, this
- *                                  route will fail with a clear "invoice
- *                                  lookup failed" error rather than a
- *                                  silent one.
+ *   VITE_SUPABASE_URL           — confirmed present in this Vercel project
+ *                                  (Production and Preview); the Vite
+ *                                  prefix is just this app's naming
+ *                                  convention for the var, it's read here
+ *                                  the same as any other server env var
+ *   SUPABASE_SERVICE_ROLE_KEY   — confirmed present in this Vercel project
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -44,10 +42,10 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing token' })
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL
+    const supabaseUrl = process.env.VITE_SUPABASE_URL
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set in environment variables')
+      console.error('VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set in environment variables')
       return res.status(500).json({ error: 'Payment not configured — contact support' })
     }
 
