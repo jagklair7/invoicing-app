@@ -260,6 +260,16 @@ export default function Layout({ children, session }) {
   const { flags, loading: flagsLoading } = useFeatureFlags()
 
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sidebarWidth, setSidebarWidth] = useState(224)
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false)
+
+  function resizeSidebar(event) {
+    setSidebarWidth(Math.min(360, Math.max(180, event.clientX)))
+  }
+
+  function stopResizingSidebar() {
+    setIsResizingSidebar(false)
+  }
 
   // Close the drawer automatically whenever the route changes.
   useEffect(() => { setDrawerOpen(false) }, [location.pathname])
@@ -356,7 +366,7 @@ export default function Layout({ children, session }) {
       <aside
         className="hidden md:flex"
         style={{
-          width: 224, background: 'white',
+          width: sidebarWidth, background: 'white',
           borderRight: '1px solid #e2e8f0',
           flexDirection: 'column', position: 'fixed',
           top: 0, left: 0, bottom: 0, zIndex: 40,
@@ -494,6 +504,26 @@ export default function Layout({ children, session }) {
             </div>
           </div>
         )}
+
+        <div
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          title="Drag to resize sidebar"
+          onPointerDown={event => {
+            event.currentTarget.setPointerCapture(event.pointerId)
+            setIsResizingSidebar(true)
+          }}
+          onPointerMove={event => {
+            if (isResizingSidebar) resizeSidebar(event)
+          }}
+          onPointerUp={stopResizingSidebar}
+          onPointerCancel={stopResizingSidebar}
+          style={{
+            position: 'absolute', top: 0, right: -4, bottom: 0, width: 8,
+            cursor: 'col-resize', zIndex: 1, touchAction: 'none',
+          }}
+        />
       </aside>
 
       {/* ── Mobile top app bar (hidden md+) ── */}
@@ -675,8 +705,9 @@ export default function Layout({ children, session }) {
 
       {/* ── Main content ── */}
       <main
-        className="md:ml-[224px]"
+        className="md:ml-[var(--sidebar-width)]"
         style={{
+          '--sidebar-width': `${sidebarWidth}px`,
           flex: 1,
           minHeight: '100vh',
           background: '#f8fafc',

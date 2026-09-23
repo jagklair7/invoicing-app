@@ -10,12 +10,15 @@
 //     (fonts, color tokens, table layout) rather than matching Quotes'
 //     public page pixel-for-pixel. If you want them to look identical,
 //     share QuotePublic.jsx and I'll re-align this to it.
-//   - The actual card-charging call (initiateHelcimCheckout) posts to a new
-//     'public-invoice-pay' Edge Function that I've sketched separately and
-//     flagged heavily — I do NOT have your Helcim API token handling,
-//     PayNowButton.jsx, or any existing charge Edge Function to mirror, so
-//     don't deploy that piece as-is without reviewing it against how
-//     Helcim is actually wired up elsewhere in this app.
+//   - The card-charging call now hits /api/public-invoice-pay (a Vercel
+//     route, mirroring the working /api/helcim-init.js), not a Supabase
+//     Edge Function — the earlier supabase.functions.invoke() call was
+//     pointed at Supabase's Edge Functions infrastructure, where
+//     'public-invoice-pay' was never deployed, which is why it failed with
+//     "Failed to send a request to the Edge Function" from both the email
+//     link and the PDF link. /api/public-invoice-pay.js looks the invoice
+//     up server-side by its public_token (service-role, bypassing RLS)
+//     and takes amount/status from that row, never from this client call.
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
@@ -200,18 +203,21 @@ export default function InvoicePublic() {
     }
   }
 
-  // Flagged: this calls a new 'public-invoice-pay' Edge Function I've
-  // sketched separately, NOT an existing one — see that file's header for
-  // what's unverified before wiring this up for real.
+  // Calls /api/public-invoice-pay (Vercel route) — see the file header for
+  // why this replaced the earlier supabase.functions.invoke() call.
   async function handlePayNow() {
     setPaying(true)
     setPayError(null)
     try {
-      const { data: session, error: fnErr } = await supabase.functions.invoke('public-invoice-pay', {
-        body: { token },
+      const res = await fetch('/api/public-invoice-pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
       })
-      if (fnErr) throw fnErr
-      if (!session?.checkoutToken) throw new Error('Could not start checkout')
+      const session = await res.json()
+      if (!res.ok || !session?.checkoutToken) {
+        throw new Error(session?.error || 'Could not start checkout')
+      }
 
       // Helcim's HelcimPay.js is expected to be loaded globally (script tag
       // in index.html) — verify this against however Helcim is already
