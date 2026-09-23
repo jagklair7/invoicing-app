@@ -50,38 +50,39 @@ function computePayUrl(invoice) {
   return `${origin}/i/${invoice.public_token}`
 }
 
-// Draws a clickable "Pay this invoice online" box and returns the new y
-// cursor. No-ops (returns y unchanged) when payUrl is null.
-function drawPayNowBox(doc, y, ml, cw, ph, payUrl) {
+// Draws a small, clickable "Pay this invoice online" button right-aligned
+// under the totals block (same right edge as the totals value column) and
+// returns the new y cursor. No-ops (returns y unchanged) when payUrl is
+// null. No URL text is printed — the whole button is a doc.link() hotspot,
+// same as before, just smaller and without the printed link fallback text.
+function drawPayButton(doc, y, valueX, ph, payUrl) {
   if (!payUrl) return y
 
-  const boxH = 18
-  if (y + boxH > ph - 30) {
+  const btnW = 46
+  const btnH = 8
+  const btnX = valueX - btnW  // right edge matches the totals value column
+
+  if (y + btnH > ph - 30) {
     doc.addPage()
     y = 20
   }
 
-  setColor(doc, C.tealLight, 'fill')
-  doc.setDrawColor(...C.teal)
-  doc.setLineWidth(0.4)
-  doc.roundedRect(ml, y, cw, boxH, 3, 3, 'FD')
+  setColor(doc, C.teal, 'fill')
+  doc.roundedRect(btnX, y, btnW, btnH, 2, 2, 'F')
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9.5)
-  setColor(doc, C.teal)
-  doc.text('Pay this invoice online', ml + 5, y + 7)
-
-  doc.setFont('courier', 'normal')
   doc.setFontSize(8)
-  setColor(doc, C.teal)
-  doc.text(payUrl, ml + 5, y + 13)
+  setColor(doc, C.white)
+  doc.text('Pay this invoice online', btnX + btnW / 2, y + 5.3, { align: 'center' })
 
-  // Clickable region over the whole box, in most PDF viewers (Acrobat,
+  // Clickable region over the whole button, in most PDF viewers (Acrobat,
   // Preview, Chrome's built-in viewer). Some lightweight viewers ignore
-  // link annotations — the printed URL text above is the fallback for those.
-  doc.link(ml, y, cw, boxH, { url: payUrl })
+  // link annotations — there's no visible fallback text now, so on those
+  // viewers the button is a dead end. Flagging this trade-off since the
+  // prior version's printed URL text existed specifically as that fallback.
+  doc.link(btnX, y, btnW, btnH, { url: payUrl })
 
-  return y + boxH + 6
+  return y + btnH + 6
 }
 
 function loadImage(src) {
@@ -601,7 +602,13 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
     }
   })
 
-  // ── 5b. Payment history (mirrors PaymentsSection.jsx) ──────────────────────
+  // ── 5b. Pay Now button — directly under the totals block, right-aligned
+  // to the same value column as Total Due / Balance Due. Replaces the old
+  // full-width box that used to sit after Notes with the printed URL.
+  const payUrl = computePayUrl(invoice)
+  y = drawPayButton(doc, y + 2, valueX, ph, payUrl)
+
+  // ── 5c. Payment history (mirrors PaymentsSection.jsx) ──────────────────────
   if (payments.length > 0) {
     y += 6
 
@@ -723,11 +730,6 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
       y += lineHeight
     })
   }
-
-  // ── 6b. Pay Now (customer-facing online payment link) ──────────────────────
-  y += 4
-  const payUrl = computePayUrl(invoice)
-  y = drawPayNowBox(doc, y, ml, cw, ph, payUrl)
 
   // ── 7. Footer ──────────────────────────────────────────────────────────────
   const footerY = ph - 16
