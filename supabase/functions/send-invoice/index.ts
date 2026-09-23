@@ -22,8 +22,8 @@
 // includePayNow/payUrl fields the client might send. The invoice row in the
 // database is the source of truth; trusting a client-supplied URL here
 // would let a caller inject an arbitrary link into the email/PDF. When
-// eligible, the link is drawn into the PDF as a clickable box and rendered
-// as a "Pay Now" button in the email body.
+// eligible, the link is drawn into the PDF as a small button right under
+// the totals block, and rendered as a "Pay Now" button in the email body.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { encode as base64Encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -103,36 +103,36 @@ function setColor(doc: any, rgb: number[], type: 'text' | 'fill' = 'text') {
   else doc.setTextColor(...safe)
 }
 
-// Draws a clickable "Pay this invoice online" box, mirroring
-// src/utils/exportInvoicePDF.js's drawPayNowBox exactly. No-ops when
-// payUrl is null.
-function drawPayNowBox(doc: any, y: number, ml: number, cw: number, ph: number, payUrl: string | null) {
+// Draws a small, clickable "Pay this invoice online" button right-aligned
+// under the totals block (same right edge as the totals value column).
+// Mirrors src/utils/exportInvoicePDF.js's drawPayButton exactly — kept in
+// sync by hand since this Edge Function can't import that browser file.
+// No-ops when payUrl is null. No URL text is printed; the whole button is
+// a doc.link() hotspot (same trade-off flagged in exportInvoicePDF.js: PDF
+// viewers that ignore link annotations have no visible fallback anymore).
+function drawPayButton(doc: any, y: number, valueX: number, ph: number, payUrl: string | null) {
   if (!payUrl) return y
 
-  const boxH = 18
-  if (y + boxH > ph - 30) {
+  const btnW = 46
+  const btnH = 8
+  const btnX = valueX - btnW
+
+  if (y + btnH > ph - 30) {
     doc.addPage()
     y = 20
   }
 
-  setColor(doc, C.tealLight, 'fill')
-  doc.setDrawColor(...C.teal)
-  doc.setLineWidth(0.4)
-  doc.roundedRect(ml, y, cw, boxH, 3, 3, 'FD')
+  setColor(doc, C.teal, 'fill')
+  doc.roundedRect(btnX, y, btnW, btnH, 2, 2, 'F')
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9.5)
-  setColor(doc, C.teal)
-  doc.text('Pay this invoice online', ml + 5, y + 7)
-
-  doc.setFont('courier', 'normal')
   doc.setFontSize(8)
-  setColor(doc, C.teal)
-  doc.text(payUrl, ml + 5, y + 13)
+  setColor(doc, C.white)
+  doc.text('Pay this invoice online', btnX + btnW / 2, y + 5.3, { align: 'center' })
 
-  doc.link(ml, y, cw, boxH, { url: payUrl })
+  doc.link(btnX, y, btnW, btnH, { url: payUrl })
 
-  return y + boxH + 6
+  return y + btnH + 6
 }
 
 function parseColor(str?: string | null): number[] | null {
@@ -554,6 +554,11 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
     }
   })
 
+  // ── Pay Now button — directly under the totals block, right-aligned to
+  // the same value column as Total Due / Balance Due. Replaces the old
+  // full-width box with printed URL that used to sit after Notes.
+  y = drawPayButton(doc, y + 2, valueX, ph, payUrl)
+
   if (payments.length > 0) {
     y += 6
     if (y + 10 > ph - 40) { doc.addPage(); y = 20 }
@@ -640,10 +645,6 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
       y += lineHeight
     })
   }
-
-  // ── Pay Now (customer-facing online payment link) ──────────────────────────
-  y += 4
-  y = drawPayNowBox(doc, y, ml, cw, ph, payUrl)
 
   const footerY = ph - 16
   doc.setDrawColor(...C.border)
