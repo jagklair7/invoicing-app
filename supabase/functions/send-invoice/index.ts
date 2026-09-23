@@ -15,6 +15,15 @@
 //    browser never uploads a multi-hundred-KB base64 PDF over the network —
 //    it just sends a tiny JSON body, which is what fixes the "fails on some
 //    WiFi networks" issue: large POST bodies were the thing getting dropped.
+//
+// PAY NOW (new): for the LEAN path, this now computes a customer-facing
+// pay link directly from invoice.online_payment_enabled + invoice.public_token
+// (the columns InvoiceView.jsx's toggle writes) — NOT from any
+// includePayNow/payUrl fields the client might send. The invoice row in the
+// database is the source of truth; trusting a client-supplied URL here
+// would let a caller inject an arbitrary link into the email/PDF. When
+// eligible, the link is drawn into the PDF as a clickable box and rendered
+// as a "Pay Now" button in the email body.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { encode as base64Encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -30,6 +39,11 @@ const DEFAULT_SENDER_NAME = 'Klair'
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+// FLAG: set this env var on the function if the app's public URL differs —
+// confirmed from the "Customer Pay Now link" you shared:
+// https://invoice.digital1now.com/i/<token>
+const APP_URL = Deno.env.get('APP_URL') || 'https://invoice.digital1now.com'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -43,6 +57,15 @@ const fmtDate = (d?: string | null) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', {
     year: 'numeric', month: 'short', day: 'numeric'
   }) : '—'
+
+// Mirrors the canPay check in src/pages/InvoicePublic.jsx exactly, using
+// the invoice row's own columns rather than anything the client sent.
+function computePayUrl(invoice: any): string | null {
+  if (!invoice?.online_payment_enabled) return null
+  if (!invoice?.public_token) return null
+  if (invoice.status === 'paid' || invoice.status === 'void') return null
+  return `${APP_URL}/i/${invoice.public_token}`
+}
 
 // ── Discount math ────────────────────────────────────────────────────────────
 // Verified against src/utils/discount.js — matches exactly (percent:
@@ -78,6 +101,38 @@ function setColor(doc: any, rgb: number[], type: 'text' | 'fill' = 'text') {
   const safe = Array.isArray(rgb) ? rgb : [0, 0, 0]
   if (type === 'fill') doc.setFillColor(...safe)
   else doc.setTextColor(...safe)
+}
+
+// Draws a clickable "Pay this invoice online" box, mirroring
+// src/utils/exportInvoicePDF.js's drawPayNowBox exactly. No-ops when
+// payUrl is null.
+function drawPayNowBox(doc: any, y: number, ml: number, cw: number, ph: number, payUrl: string | null) {
+  if (!payUrl) return y
+
+  const boxH = 18
+  if (y + boxH > ph - 30) {
+    doc.addPage()
+    y = 20
+  }
+
+  setColor(doc, C.tealLight, 'fill')
+  doc.setDrawColor(...C.teal)
+  doc.setLineWidth(0.4)
+  doc.roundedRect(ml, y, cw, boxH, 3, 3, 'FD')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9.5)
+  setColor(doc, C.teal)
+  doc.text('Pay this invoice online', ml + 5, y + 7)
+
+  doc.setFont('courier', 'normal')
+  doc.setFontSize(8)
+  setColor(doc, C.teal)
+  doc.text(payUrl, ml + 5, y + 13)
+
+  doc.link(ml, y, cw, boxH, { url: payUrl })
+
+  return y + boxH + 6
 }
 
 function parseColor(str?: string | null): number[] | null {
@@ -175,7 +230,7 @@ function parseNotesHtml(html: string) {
 }
 
 // ── PDF page renderer (ported from src/utils/exportInvoicePDF.js) ───────────
-async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any, COMPANY: any, productMap: Map<string, string>) {
+async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any, COMPANY: any, productMap: Map<string, string>, payUrl: string | null) {
   const { items, payments, parentCustomer } = data
   const pw = doc.internal.pageSize.getWidth()
   const ph = doc.internal.pageSize.getHeight()
@@ -586,6 +641,10 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
     })
   }
 
+  // ── Pay Now (customer-facing online payment link) ──────────────────────────
+  y += 4
+  y = drawPayNowBox(doc, y, ml, cw, ph, payUrl)
+
   const footerY = ph - 16
   doc.setDrawColor(...C.border)
   doc.setLineWidth(0.2)
@@ -660,7 +719,7 @@ async function fetchInvoiceFull(admin: any, invoiceId: string, orgId: string) {
   }
 }
 
-function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: string, total: number) {
+function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: string, total: number, payUrl: string | null) {
   return `
     <div style="margin:0;padding:0;background:#f1f5f9;">
       <div style="max-width:640px;margin:0 auto;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
@@ -705,11 +764,22 @@ function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: str
             <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Personal note</div>
             <div style="font-size:14px;line-height:1.7;color:#334155;white-space:pre-wrap;">${sendNote}</div>
           </div>` : ''}
+          ${payUrl ? `
+          <div style="text-align:center;margin:28px 0 8px;">
+            <a href="${payUrl}" style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:700;">
+              Pay Now — ${fmt(total)}
+            </a>
+          </div>
+          <p style="text-align:center;font-size:12px;color:#94a3b8;margin:0 0 24px;word-break:break-all;">
+            Or copy this link: <a href="${payUrl}" style="color:#0d7377;">${payUrl}</a>
+          </p>
+          ` : `
           <div style="text-align:center;margin:28px 0 24px;">
             <a href="mailto:info@klair.ca" style="display:inline-block;background:#0d7377;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:700;">
               Contact us
             </a>
           </div>
+          `}
           <p style="font-size:13px;line-height:1.7;color:#64748b;margin:0;">
             If you have any questions, please reply to this email and we'll be happy to help.
           </p>
@@ -749,15 +819,20 @@ serve(async (req) => {
       const tax      = subtotal * 0.05
       const total    = subtotal + tax
 
+      // Computed from the invoice row itself — see computePayUrl's comment
+      // for why any includePayNow/payUrl fields in the request body are
+      // deliberately ignored here.
+      const payUrl = computePayUrl(invoice)
+
       const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-      await drawInvoicePage(doc, invoice, customer, { items, payments, parentCustomer }, COMPANY, productMap)
+      await drawInvoicePage(doc, invoice, customer, { items, payments, parentCustomer }, COMPANY, productMap, payUrl)
       const pdfBytes = doc.output('arraybuffer') as ArrayBuffer
       pdfBase64 = base64Encode(new Uint8Array(pdfBytes))
       filename  = `${invoice.number || 'invoice'}-${(customer?.name || 'invoice').replace(/\s+/g, '-')}.pdf`
 
       to           = body.to
       subject      = body.subject || `Invoice ${invoice.number} from ${COMPANY.name || body.companyName || DEFAULT_SENDER_NAME}`
-      html         = buildEmailHtml(invoice, customer, COMPANY, body.sendNote || '', total)
+      html         = buildEmailHtml(invoice, customer, COMPANY, body.sendNote || '', total, payUrl)
       companyName  = COMPANY.name || body.companyName
       orgId        = body.orgId
 

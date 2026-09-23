@@ -38,6 +38,52 @@ function setColor(doc, rgb, type = 'text') {
   else doc.setTextColor(...safe)
 }
 
+// Builds the customer-facing Pay Now link from the invoice's own
+// public_token/online_payment_enabled (same columns InvoiceView.jsx reads),
+// or returns null if online payment isn't applicable right now. Mirrors the
+// `canPay` check in src/pages/InvoicePublic.jsx exactly.
+function computePayUrl(invoice) {
+  if (!invoice?.online_payment_enabled) return null
+  if (!invoice?.public_token) return null
+  if (invoice.status === 'paid' || invoice.status === 'void') return null
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/i/${invoice.public_token}`
+}
+
+// Draws a clickable "Pay this invoice online" box and returns the new y
+// cursor. No-ops (returns y unchanged) when payUrl is null.
+function drawPayNowBox(doc, y, ml, cw, ph, payUrl) {
+  if (!payUrl) return y
+
+  const boxH = 18
+  if (y + boxH > ph - 30) {
+    doc.addPage()
+    y = 20
+  }
+
+  setColor(doc, C.tealLight, 'fill')
+  doc.setDrawColor(...C.teal)
+  doc.setLineWidth(0.4)
+  doc.roundedRect(ml, y, cw, boxH, 3, 3, 'FD')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9.5)
+  setColor(doc, C.teal)
+  doc.text('Pay this invoice online', ml + 5, y + 7)
+
+  doc.setFont('courier', 'normal')
+  doc.setFontSize(8)
+  setColor(doc, C.teal)
+  doc.text(payUrl, ml + 5, y + 13)
+
+  // Clickable region over the whole box, in most PDF viewers (Acrobat,
+  // Preview, Chrome's built-in viewer). Some lightweight viewers ignore
+  // link annotations — the printed URL text above is the fallback for those.
+  doc.link(ml, y, cw, boxH, { url: payUrl })
+
+  return y + boxH + 6
+}
+
 function loadImage(src) {
   return new Promise((resolve) => {
     const img = new Image()
@@ -677,6 +723,11 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
       y += lineHeight
     })
   }
+
+  // ── 6b. Pay Now (customer-facing online payment link) ──────────────────────
+  y += 4
+  const payUrl = computePayUrl(invoice)
+  y = drawPayNowBox(doc, y, ml, cw, ph, payUrl)
 
   // ── 7. Footer ──────────────────────────────────────────────────────────────
   const footerY = ph - 16

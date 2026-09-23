@@ -950,11 +950,9 @@ export default function InvoiceView() {
   // "works on cellular, fails on some WiFi" issue: the browser no longer
   // uploads a multi-hundred-KB base64 PDF, just this small body.
   //
-  // FLAG: added includePayNow + payUrl to the body below so the send-invoice
-  // function CAN include a Pay Now link/button in the email — but I don't
-  // have that function's source, so it doesn't actually do anything with
-  // these fields yet. Update send-invoice to read them (or send me that
-  // file and I'll do it) before this has any real effect on the email.
+  // send-invoice computes the Pay Now link itself from the invoice row's
+  // own online_payment_enabled/public_token columns — no need to pass
+  // anything about it here.
   async function handleSendInvoice() {
     if (!sendEmail.trim()) return
     setSending(true)
@@ -967,8 +965,6 @@ export default function InvoiceView() {
           to: sendEmail.trim(),
           sendNote: sendNote || undefined,
           companyName: orgSettings?.company_name || activeOrg?.name,
-          includePayNow: onlinePaymentEnabled,       // FLAG: send-invoice must be updated to use this
-          payUrl: onlinePaymentEnabled ? publicPayUrl : undefined, // FLAG: same
         },
       })
 

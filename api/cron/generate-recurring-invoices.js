@@ -132,7 +132,6 @@ export default async function handler(req, res) {
             orgId: template.org_id,
             to: customerRow.email,
             companyName: settings?.company_name,
-            includePayNow: template.online_payment_enabled,
           },
         })
         if (sendErr) {
