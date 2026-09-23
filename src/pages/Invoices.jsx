@@ -818,8 +818,6 @@ export default function Invoices() {
   const [filter, setFilter]           = useState('all')
   const [sentDateFrom, setSentDateFrom] = useState('')
   const [sentDateTo, setSentDateTo]     = useState('')
-  const [paidDateFrom, setPaidDateFrom] = useState('')
-  const [paidDateTo, setPaidDateTo]     = useState('')
   const [modal, setModal]             = useState(null)
   const [customers, setCustomers]     = useState({})
   const [orgSettings, setOrgSettings] = useState(null)
@@ -965,8 +963,7 @@ export default function Invoices() {
   const filtered = invoices.filter(inv => {
     const matchesStatus = filter === 'all' ? true : inv.status === filter
     const matchesSentRange = matchesDateRange(inv.date, sentDateFrom, sentDateTo)
-    const matchesPaidRange = matchesDateRange(inv.paid_by, paidDateFrom, paidDateTo)
-    return matchesStatus && matchesSentRange && matchesPaidRange
+    return matchesStatus && matchesSentRange
   })
   const activeModal = modal
 
@@ -1006,40 +1003,21 @@ export default function Invoices() {
             ))}
           </div>
 
-          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Sent</span>
-              <input
-                type="date"
-                value={sentDateFrom}
-                onChange={e => setSentDateFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
-              />
-              <span className="text-xs text-slate-400">to</span>
-              <input
-                type="date"
-                value={sentDateTo}
-                onChange={e => setSentDateTo(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Paid by</span>
-              <input
-                type="date"
-                value={paidDateFrom}
-                onChange={e => setPaidDateFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
-              />
-              <span className="text-xs text-slate-400">to</span>
-              <input
-                type="date"
-                value={paidDateTo}
-                onChange={e => setPaidDateTo(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
-              />
-            </div>
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:flex-row md:items-center md:justify-start">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Sent</span>
+            <input
+              type="date"
+              value={sentDateFrom}
+              onChange={e => setSentDateFrom(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
+            />
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="date"
+              value={sentDateTo}
+              onChange={e => setSentDateTo(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
+            />
           </div>
         </div>
 
