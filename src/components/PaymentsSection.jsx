@@ -330,13 +330,27 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
   // Recompute and persist invoice status from a given payments array.
   // Shared by save + delete so status never drifts out of sync with
   // what's actually recorded.
+  //
+  // FIXED: this previously only ever wrote 'paid' or 'sent' — there was no
+  // 'partial' branch, so a partially-paid invoice was written back as
+  // 'sent' every time. That's why the Invoices list's "Partial" filter
+  // (which checks inv.status === 'partial') never found anything: no
+  // invoice from this path could ever actually hold that status.
   async function syncInvoiceStatus(currentPayments) {
+    // Don't let a payment edit resurrect a voided invoice's status.
+    if (invoice?.status === 'void') return
+
     const totalPaid = currentPayments.reduce((s, p) => s + Number(p.amount), 0)
     const balance   = Number(invoiceTotal) - totalPaid
 
+    let newStatus
+    if (balance <= 0) newStatus = 'paid'
+    else if (totalPaid > 0) newStatus = 'partial'
+    else newStatus = 'sent' // last payment removed — back to unpaid/sent
+
     const { error: statusErr } = await supabase
       .from('invoices')
-      .update({ status: balance <= 0 ? 'paid' : 'sent' })
+      .update({ status: newStatus })
       .eq('id', invoiceId)
       .eq('org_id', orgId)
 
@@ -405,8 +419,8 @@ export default function PaymentsSection({ invoiceId, invoiceTotal, orgId, invoic
       setPayments(updatedPayments)
 
       // Re-sync status now that the total paid has changed — a deletion can
-      // just as easily flip an invoice from "paid" back to "sent" as an
-      // addition can flip it the other way.
+      // just as easily flip an invoice from "paid" back to "partial"/"sent"
+      // as an addition can flip it the other way.
       await syncInvoiceStatus(updatedPayments)
 
       onPaymentDeleted?.(payment.id)
