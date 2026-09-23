@@ -370,7 +370,37 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
   const balance     = parseAmount(inv.total) - totalPaid
   const isFullyPaid  = balance <= 0.005
 
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
   useEffect(() => { fetchHistory() }, [])
+
+  const filteredInvoices = invoices.filter(inv => {
+  // 1. Filter by Status (Draft, Sent, Paid, Void, etc.)
+  if (statusFilter !== 'all' && inv.status !== statusFilter) {
+    return false
+  }
+
+  // 2. Filter by Search Query (Number or Customer)
+  const query = searchQuery.toLowerCase()
+  const matchesSearch = 
+    inv.number?.toLowerCase().includes(query) ||
+    inv.customers?.name?.toLowerCase().includes(query)
+
+  if (!matchesSearch) return false
+
+  // 3. Filter by Date Range (Applied to Issue Date / Created Date)
+  const invDate = inv.issue_date || inv.created_at?.split('T')[0]
+
+  if (startDate && invDate < startDate) {
+    return false
+  }
+  if (endDate && invDate > endDate) {
+    return false
+  }
+
+  return true
+})
 
   async function fetchHistory() {
     setLoadingH(true)
@@ -959,6 +989,52 @@ export default function Invoices() {
           ))}
         </div>
 
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
+  {/* Search Bar */}
+  <input
+    className="inv-input2"
+    type="text"
+    placeholder="Search invoice or customer..."
+    value={searchQuery}
+    onChange={e => setSearchQuery(e.target.value)}
+    style={{ maxWidth: '260px' }}
+  />
+
+  {/* Date Range Inputs */}
+  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <label style={{ fontSize: '12px', color: '#64748b' }}>From:</label>
+    <input
+      type="date"
+      className="inv-input2"
+      style={{ width: 'auto' }}
+      value={startDate}
+      onChange={e => setStartDate(e.target.value)}
+    />
+  </div>
+
+  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <label style={{ fontSize: '12px', color: '#64748b' }}>To:</label>
+    <input
+      type="date"
+      className="inv-input2"
+      style={{ width: 'auto' }}
+      value={endDate}
+      onChange={e => setEndDate(e.target.value)}
+    />
+  </div>
+
+  {/* Clear Date Filters Button */}
+  {(startDate || endDate) && (
+    <button
+      className="inv-btn2 inv-btn2--ghost"
+      onClick={() => { setStartDate(''); setEndDate('') }}
+      style={{ fontSize: '12px', padding: '6px 12px' }}
+    >
+      Clear Dates
+    </button>
+  )}
+</div>
+
         {/* ── Desktop table (md and up) ── */}
         <div className="hidden md:block bg-white rounded-2xl shadow overflow-hidden">
           <table className="w-full text-sm">
@@ -974,7 +1050,7 @@ export default function Invoices() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(inv => {
+              {filteredInvoices.map(inv => {
                 const isOverdue = inv.due_date && new Date(inv.due_date) < new Date() && inv.status === 'sent'
                 const sc = statusColor(inv.status)
                 return (
