@@ -816,6 +816,10 @@ function InvoiceCardMobile({ inv, onOpen, onAction, isSuspended }) {
 export default function Invoices() {
   const [invoices, setInvoices]       = useState([])
   const [filter, setFilter]           = useState('all')
+  const [sentDateFrom, setSentDateFrom] = useState('')
+  const [sentDateTo, setSentDateTo]     = useState('')
+  const [paidDateFrom, setPaidDateFrom] = useState('')
+  const [paidDateTo, setPaidDateTo]     = useState('')
   const [modal, setModal]             = useState(null)
   const [customers, setCustomers]     = useState({})
   const [orgSettings, setOrgSettings] = useState(null)
@@ -832,13 +836,38 @@ export default function Invoices() {
 
   async function fetchInvoices() {
     if (!activeOrg?.orgId) return
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*, customers(id, name, email, phone, address)')
-      .eq('org_id', activeOrg.orgId)
-      .order('created_at', { ascending: false })
-    if (error) console.error(error)
-    setInvoices(data || [])
+
+    const [invoicesRes, paymentsRes] = await Promise.all([
+      supabase
+        .from('invoices')
+        .select('*, customers(id, name, email, phone, address)')
+        .eq('org_id', activeOrg.orgId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('invoice_payments')
+        .select('invoice_id, payment_date')
+        .eq('org_id', activeOrg.orgId)
+    ])
+
+    if (invoicesRes.error) console.error(invoicesRes.error)
+    if (paymentsRes.error) console.error(paymentsRes.error)
+
+    const lastPaymentByInvoice = {}
+    ;(paymentsRes.data || []).forEach(payment => {
+      const paymentDate = payment.payment_date
+      if (!paymentDate) return
+      const current = lastPaymentByInvoice[payment.invoice_id]
+      if (!current || new Date(paymentDate) > new Date(current)) {
+        lastPaymentByInvoice[payment.invoice_id] = paymentDate
+      }
+    })
+
+    const mapped = (invoicesRes.data || []).map(inv => ({
+      ...inv,
+      paid_by: inv.paid_at || lastPaymentByInvoice[inv.id] || null,
+    }))
+
+    setInvoices(mapped)
   }
 
   async function fetchOrgSettings() {
@@ -921,7 +950,24 @@ export default function Invoices() {
     navigate(`/invoices/${newInv.id}`)
   }
 
-  const filtered = invoices.filter(inv => filter === 'all' ? true : inv.status === filter)
+  const matchesDateRange = (value, from, to) => {
+    if (!from && !to) return true
+    if (!value) return false
+
+    const dateValue = new Date(value + 'T00:00:00')
+    if (Number.isNaN(dateValue.getTime())) return false
+
+    if (from && dateValue < new Date(from + 'T00:00:00')) return false
+    if (to && dateValue > new Date(to + 'T23:59:59')) return false
+    return true
+  }
+
+  const filtered = invoices.filter(inv => {
+    const matchesStatus = filter === 'all' ? true : inv.status === filter
+    const matchesSentRange = matchesDateRange(inv.date, sentDateFrom, sentDateTo)
+    const matchesPaidRange = matchesDateRange(inv.paid_by, paidDateFrom, paidDateTo)
+    return matchesStatus && matchesSentRange && matchesPaidRange
+  })
   const activeModal = modal
 
   return (
@@ -947,16 +993,54 @@ export default function Invoices() {
         <SuspendedBanner />
 
         {/* Filters — horizontally scrollable on mobile */}
-        <div className="inv-filter-scroll mb-4">
-          {['all', 'draft', 'sent', 'partial', 'paid', 'void'].map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`inv-filter-chip ${filter === f ? 'inv-filter-chip--active' : ''}`}
-            >
-              {f}
-            </button>
-          ))}
+        <div className="mb-4 space-y-3">
+          <div className="inv-filter-scroll">
+            {['all', 'draft', 'sent', 'partial', 'paid', 'void'].map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`inv-filter-chip ${filter === f ? 'inv-filter-chip--active' : ''}`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:flex-row md:flex-wrap md:items-center md:justify-between">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Sent</span>
+              <input
+                type="date"
+                value={sentDateFrom}
+                onChange={e => setSentDateFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <input
+                type="date"
+                value={sentDateTo}
+                onChange={e => setSentDateTo(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Paid by</span>
+              <input
+                type="date"
+                value={paidDateFrom}
+                onChange={e => setPaidDateFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <input
+                type="date"
+                value={paidDateTo}
+                onChange={e => setPaidDateTo(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-700 outline-none focus:border-teal-600"
+              />
+            </div>
+          </div>
         </div>
 
         {/* ── Desktop table (md and up) ── */}
