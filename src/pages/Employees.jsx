@@ -23,6 +23,8 @@ const DEFAULT_FORM = {
   name: '',
   email: '',
   phone: '',
+  address: '',
+  sin: '',
   pay_type: 'hourly',
   pay_rate: '0.00',
   pay_frequency: 'biweekly',
@@ -32,6 +34,21 @@ const DEFAULT_FORM = {
   status: 'active',
   self_employed: false,
   ei_exempt: false,
+}
+
+// Formats digits-only input as ###-###-### while typing, capped at 9 digits.
+function formatSin(value) {
+  const digits = value.replace(/\D/g, '').slice(0, 9)
+  const parts = [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9)].filter(Boolean)
+  return parts.join('-')
+}
+
+// Masks a stored SIN for table display — shows only the last 3 digits.
+function maskSin(sin) {
+  const digits = (sin || '').replace(/\D/g, '')
+  if (!digits) return '—'
+  const last3 = digits.slice(-3)
+  return `•••-•••-${last3}`
 }
 
 export default function Employees() {
@@ -90,6 +107,12 @@ export default function Employees() {
       return
     }
 
+    const sinDigits = formData.sin.replace(/\D/g, '')
+    if (sinDigits && sinDigits.length !== 9) {
+      setError('SIN must be 9 digits.')
+      return
+    }
+
     setSaving(true)
 
     const payload = {
@@ -97,6 +120,8 @@ export default function Employees() {
       name: formData.name.trim(),
       email: formData.email.trim() || null,
       phone: formData.phone.trim() || null,
+      address: formData.address.trim() || null,
+      sin: sinDigits || null,
       pay_type: formData.pay_type,
       pay_rate: parseFloat(formData.pay_rate) || 0,
       pay_frequency: formData.pay_frequency,
@@ -134,6 +159,8 @@ export default function Employees() {
       name: employee.name || '',
       email: employee.email || '',
       phone: employee.phone || '',
+      address: employee.address || '',
+      sin: formatSin(employee.sin || ''),
       pay_type: employee.pay_type || 'hourly',
       pay_rate: employee.pay_rate?.toString() || '0.00',
       pay_frequency: employee.pay_frequency || 'biweekly',
@@ -156,6 +183,10 @@ export default function Employees() {
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleSinChange = (e) => {
+    setFormData(prev => ({ ...prev, sin: formatSin(e.target.value) }))
   }
 
   const handleSelfEmployedChange = (e) => {
@@ -212,6 +243,27 @@ export default function Employees() {
             <input name="phone" value={formData.phone} onChange={handleChange}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"
               placeholder="(555) 123-4567" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Address</label>
+            <input name="address" value={formData.address} onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"
+              placeholder="123 Main St, Edmonton, AB T5J 0N3" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">SIN</label>
+            <input
+              name="sin"
+              value={formData.sin}
+              onChange={handleSinChange}
+              inputMode="numeric"
+              autoComplete="off"
+              type="password"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"
+              placeholder="123-456-789"
+              maxLength={11}
+            />
+            <p className="text-xs text-slate-400 mt-1">Required for T4 slips and CRA remittances.</p>
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Pay type</label>
@@ -322,6 +374,7 @@ export default function Employees() {
           <thead className="bg-slate-50 border-b">
             <tr>
               <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Employee</th>
+              <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">SIN</th>
               <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Pay</th>
               <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Frequency</th>
               <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-gray-500">Status</th>
@@ -331,13 +384,16 @@ export default function Employees() {
           <tbody className="divide-y divide-gray-100">
             {employees.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-6 py-10 text-center text-gray-400 text-sm">No employees found. Add your first employee to start payroll.</td>
+                <td colSpan={6} className="px-6 py-10 text-center text-gray-400 text-sm">No employees found. Add your first employee to start payroll.</td>
               </tr>
             ) : employees.map(employee => (
               <tr key={employee.id} className="hover:bg-slate-50">
                 <td className="px-6 py-4">
                   <div className="font-semibold text-slate-900">{employee.name}</div>
                   <div className="text-xs text-slate-500">{employee.email || employee.phone || 'No contact info'}</div>
+                  {employee.address && (
+                    <div className="text-xs text-slate-400 mt-0.5">{employee.address}</div>
+                  )}
                   <div className="mt-1 flex gap-1.5">
                     {employee.self_employed && (
                       <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5">
@@ -351,6 +407,7 @@ export default function Employees() {
                     )}
                   </div>
                 </td>
+                <td className="px-6 py-4 text-slate-700 font-mono text-sm">{maskSin(employee.sin)}</td>
                 <td className="px-6 py-4 text-slate-700">${Number(employee.pay_rate).toFixed(2)}</td>
                 <td className="px-6 py-4 text-slate-700">{employee.pay_frequency}</td>
                 <td className="px-6 py-4 text-slate-700 capitalize">{employee.status}</td>
