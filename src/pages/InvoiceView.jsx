@@ -1604,12 +1604,30 @@ export default function InvoiceView() {
                               <option key={p.id} value={p.id}>{p.name}</option>
                             ))}
                           </select>
-                          <input
+                          {/* Auto-growing textarea — same technique as
+                              InvoiceForm.jsx's Description field: rows={1},
+                              resize:none/overflow:hidden, and a ref callback
+                              that resets height to scrollHeight on every
+                              render (so a product-fill sets height correctly
+                              too, not just typing), plus the same reset in
+                              onChange for live typing. */}
+                          <textarea
                             className="inv-item-input"
                             placeholder="Description / detail"
+                            rows={1}
                             value={item.name}
-                            onChange={e => updateItem(idx, 'name', e.target.value)}
-                            style={{ background: 'white' }}
+                            onChange={e => {
+                              updateItem(idx, 'name', e.target.value)
+                              e.target.style.height = 'auto'
+                              e.target.style.height = e.target.scrollHeight + 'px'
+                            }}
+                            ref={el => {
+                              if (el) {
+                                el.style.height = 'auto'
+                                el.style.height = el.scrollHeight + 'px'
+                              }
+                            }}
+                            style={{ background: 'white', resize: 'none', overflow: 'hidden' }}
                           />
                           <input
                             className="inv-item-input inv-item-input--num"
