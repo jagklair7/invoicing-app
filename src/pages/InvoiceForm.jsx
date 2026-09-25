@@ -39,6 +39,7 @@ export default function InvoiceForm() {
       due_date: addDays(today, DEFAULT_TERMS_DAYS),
       status: 'draft',
       notes: '',
+      po_number: '',
       online_payment_enabled: false,
     }
   })
@@ -180,6 +181,7 @@ function handleProductSelect(idx, productId) {
           ...invoice,
           org_id:   activeOrg.orgId,
           due_date: invoice.due_date || null,
+          po_number: invoice.po_number || null,
           subtotal, tax, total,
         }])
         .select()
@@ -249,6 +251,12 @@ function handleProductSelect(idx, productId) {
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Due Date</label>
           <DateInput value={invoice.due_date} onChange={v => setInvoice({ ...invoice, due_date: v })} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">PO Number</label>
+          <input type="text" placeholder="e.g. PO-1234" value={invoice.po_number}
+            onChange={e => setInvoice({ ...invoice, po_number: e.target.value })}
+            className="w-full p-2 border rounded-lg text-sm" />
         </div>
         <div>
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Status</label>
