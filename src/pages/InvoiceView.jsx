@@ -8,6 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { calcLineTotal, calcLineDiscount } from '../utils/discount'
 import { useOrg } from '../context/OrgContext'
+import { checkCanCreateInvoice } from '../utils/planLimits'
 import PayNowButton from '../components/PayNowButton'
 import PaymentsSection from '../components/PaymentsSection'
 // Add to imports:
