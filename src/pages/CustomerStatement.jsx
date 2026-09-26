@@ -1,7 +1,8 @@
 // src/pages/CustomerStatement.jsx
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
+import { useOrg } from '../context/OrgContext'
 import { exportStatementPDF } from '../utils/exportStatementPDF'
 
 const css = `
@@ -382,6 +383,7 @@ function lastOfMonth(offsetMonths = 0) {
 export default function CustomerStatement() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { activeOrg } = useOrg()
 
   const [customer, setCustomer]   = useState(null)
   const [invoices, setInvoices]   = useState([])
@@ -392,33 +394,45 @@ export default function CustomerStatement() {
   // doesn't reflect partial payments since there's no 'partial' status value.
   const [paymentsByInvoice, setPaymentsByInvoice] = useState({})
   const [loading, setLoading]     = useState(true)
-  const [bizName, setBizName]     = useState('Klair Computer Inc.')
+  // FIX: previously hardcoded 'Klair Computer Inc.' as both the initial
+  // state and the fallback after fetch, and fetched from a global,
+  // org-unscoped `settings` table (a leftover from before this app went
+  // multi-tenant) — so every org's statement showed Klair's own company
+  // name/address regardless of which org's customer was being viewed.
+  // Now sourced from organization_settings, scoped by activeOrg.orgId,
+  // matching how InvoiceView.jsx/send-invoice already do it.
+  const [bizName, setBizName]     = useState('')
+  const [orgSettings, setOrgSettings] = useState(null)
   const [dateFrom, setDateFrom]   = useState(firstOfMonth(-2))
   const [dateTo, setDateTo]       = useState(lastOfMonth(0))
 
-  useEffect(() => { fetchData() }, [id, dateFrom, dateTo])
+  useEffect(() => {
+    if (activeOrg?.orgId) fetchData()
+  }, [id, dateFrom, dateTo, activeOrg?.orgId])
 
   async function fetchData() {
     setLoading(true)
     try {
       const [custRes, invRes, settingsRes] = await Promise.all([
-        supabase.from('customers').select('*').eq('id', id).single(),
+        supabase.from('customers').select('*').eq('id', id).eq('org_id', activeOrg.orgId).single(),
         supabase.from('invoices')
           .select('*')
           .eq('customer_id', id)
+          .eq('org_id', activeOrg.orgId)
           .gte('date', dateFrom)
           .lte('date', dateTo)
           .neq('status', 'void')
           .order('date', { ascending: true }),
-        supabase.from('settings').select('key, value')
+        supabase.from('organization_settings')
+          .select('company_name, company_address, company_city, company_phone, company_logo_url')
+          .eq('org_id', activeOrg.orgId)
+          .maybeSingle(),
       ])
-      const { data: settingsData } = await supabase.from('settings').select('key, value')
-      const settings = (settingsData || []).reduce((acc, item) => {
-        acc[item.key] = item.value
-        return acc
-      }, {})
-      const bizName = settings.company_name || 'Klair Computer Inc.'
-      if (custRes.data)    setCustomer(custRes.data)
+
+      if (custRes.data) setCustomer(custRes.data)
+
+      setOrgSettings(settingsRes.data || null)
+      setBizName(settingsRes.data?.company_name || 'Your Company')
 
       const fetchedInvoices = invRes.data || []
 
@@ -439,10 +453,6 @@ export default function CustomerStatement() {
       }
       setPaymentsByInvoice(paidMap)
       setInvoices(fetchedInvoices)
-
-      if (settingsRes.data?.find(s => s.key === 'business_name')) {
-        setBizName(settingsRes.data.find(s => s.key === 'business_name').value)
-      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -481,23 +491,21 @@ export default function CustomerStatement() {
     .reduce((s, i) => s + Math.max(Number(i.total || 0) - (paymentsByInvoice[i.id] || 0), 0), 0)
 
   const periodLabel = `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
-  
+
   const [exporting, setExporting] = useState(false)
- async function handleExport() {
-  setExporting(true)
-  try {
-    await exportStatementPDF(customer, invoices, dateFrom, dateTo)
-  } catch (err) {
-    alert('Export failed: ' + err.message)
-  } finally {
-    setExporting(false)
+  async function handleExport() {
+    setExporting(true)
+    try {
+      await exportStatementPDF(customer, invoices, dateFrom, dateTo, activeOrg.orgId)
+    } catch (err) {
+      alert('Export failed: ' + err.message)
+    } finally {
+      setExporting(false)
+    }
   }
-}
 
   if (loading) return (
     <>
-      alert('Tip: In the print dialog, set "Headers and footers" to Off for a clean PDF.')
-      window.print()
       <style>{css}</style>
       <div className="stmt-root"><div className="stmt-spinner" /></div>
     </>

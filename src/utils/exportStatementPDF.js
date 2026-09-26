@@ -26,6 +26,7 @@ function setColor(doc, rgb, type = 'text') {
 
 function loadImage(src) {
   return new Promise((resolve) => {
+    if (!src) { resolve(null); return }
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => {
@@ -40,20 +41,28 @@ function loadImage(src) {
   })
 }
 
-export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
-  // 1. Fetch settings
-  const { data: settingsData } = await supabase.from('settings').select('key, value')
-  const settings = (settingsData || []).reduce((acc, item) => {
-    acc[item.key] = item.value
-    return acc
-  }, {})
+// FIX: orgId param added. This used to read from a global, org-unscoped
+// `settings` table (a leftover from before this app went multi-tenant)
+// and fell back to Klair's own hardcoded name/address/phone if that
+// lookup came back empty — so every org's exported statement PDF showed
+// Klair Computer Inc.'s info regardless of whose customer it was for.
+// Now reads organization_settings scoped by org_id, matching how
+// InvoiceView.jsx / send-invoice's fetchInvoiceFull already do it, with
+// generic (non-Klair) fallbacks if a field is genuinely unset.
+export async function exportStatementPDF(customer, invoices, dateFrom, dateTo, orgId) {
+  // 1. Fetch this org's company settings
+  const { data: orgRow } = await supabase
+    .from('organization_settings')
+    .select('company_name, company_address, company_city, company_phone, company_logo_url')
+    .eq('org_id', orgId)
+    .maybeSingle()
 
   const COMPANY = {
-    name:    settings.company_name    || 'Klair Computer Inc.',
-    address: settings.company_address || '1319 Malone Place NW',
-    city:    settings.company_city    || 'Edmonton, AB T6R 0G6',
-    phone:   settings.company_phone   || '780-265-0042',
-    logo:    settings.company_logo_url || '/icon.png',
+    name:    orgRow?.company_name    || 'Your Company',
+    address: orgRow?.company_address || '',
+    city:    orgRow?.company_city    || '',
+    phone:   orgRow?.company_phone   || '',
+    logo:    orgRow?.company_logo_url || '',
   }
 
   // 2. Init doc
@@ -154,21 +163,22 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
   const cityLine = [customer?.city, customer?.province, customer?.postal_code].filter(Boolean).join(', ')
   if (cityLine) { ry += 2; ry += wrapText(cityLine, col2x, ry, billToWidth) }
 
-  // ACCOUNT SUMMARY (right col — 3 boxes)
+  // ── Payments lookup — used for BOTH the summary boxes/totals below AND
+  // the per-row running balance in the table further down. Previously
+  // this file only fetched payments for the "Paid On" date column and
+  // separately computed totalPaid/totalOutstanding/totalOverdue/running
+  // balance from invoices.status === 'paid' alone — which misses partial
+  // payments (there's no 'partial' status value), the same gap
+  // CustomerStatement.jsx's on-screen version was fixed to close. Fixed
+  // here too so the exported PDF's numbers always match what's on screen.
   const today = new Date(); today.setHours(0,0,0,0)
-  const totalInvoiced    = invoices.reduce((s, i) => s + Number(i.total || 0), 0)
-  const totalPaid        = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + Number(i.total || 0), 0)
-  const totalOutstanding = totalInvoiced - totalPaid
-  const totalOverdue     = invoices
-    .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
-    .reduce((s, i) => s + Number(i.total || 0), 0)
-
   const invoiceIds = invoices.map(inv => inv.id).filter(Boolean)
   const latestPaymentDates = {}
+  const paidByInvoice = {}
   if (invoiceIds.length > 0) {
     const { data: paymentRows } = await supabase
       .from('invoice_payments')
-      .select('invoice_id, payment_date')
+      .select('invoice_id, payment_date, amount')
       .in('invoice_id', invoiceIds)
       .order('payment_date', { ascending: false })
 
@@ -176,9 +186,18 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
       if (!latestPaymentDates[row.invoice_id]) {
         latestPaymentDates[row.invoice_id] = row.payment_date
       }
+      paidByInvoice[row.invoice_id] = (paidByInvoice[row.invoice_id] || 0) + Number(row.amount || 0)
     })
   }
 
+  const totalInvoiced    = invoices.reduce((s, i) => s + Number(i.total || 0), 0)
+  const totalPaid        = invoices.reduce((s, i) => s + (paidByInvoice[i.id] || 0), 0)
+  const totalOutstanding = totalInvoiced - totalPaid
+  const totalOverdue     = invoices
+    .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
+    .reduce((s, i) => s + Math.max(Number(i.total || 0) - (paidByInvoice[i.id] || 0), 0), 0)
+
+  // ACCOUNT SUMMARY (right col — 3 boxes)
   const boxW    = (pw - mr - col3x) / 3 - 1.5
   let   by      = headerH + 10
   const summaryItems = [
@@ -259,12 +278,17 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
     overdue: C.red,
   }
 
+  // Running balance — nets out actual payments per invoice (paidByInvoice),
+  // not just invoices whose status happens to be 'paid'. Matches
+  // CustomerStatement.jsx's on-screen calculation exactly.
   let runningBalance = 0
   invoices.forEach((inv, i) => {
-    const amount = Number(inv.total || 0)
+    const amount    = Number(inv.total || 0)
+    const paid      = paidByInvoice[inv.id] || 0
+    const remaining = Math.max(amount - paid, 0)
     const isOverdue = inv.status === 'sent' && inv.due_date && new Date(inv.due_date) < today
     const badge = isOverdue ? 'overdue' : inv.status
-    if (inv.status !== 'paid') runningBalance += amount
+    if (remaining > 0) runningBalance += remaining
 
     const bg = i % 2 === 0 ? C.white : [248, 250, 252]
     setColor(doc, bg, 'fill')
@@ -311,8 +335,8 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo) {
     doc.text(fmt(amount), colRight(cols.amt) - 1, y + 5.2, { align: 'right' })
 
     // Balance
-    const balColor = inv.status === 'paid' ? C.green : runningBalance > 0 ? C.amber : C.text
-    const balText  = inv.status === 'paid' ? '—' : fmt(runningBalance)
+    const balColor = remaining === 0 ? C.green : runningBalance > 0 ? C.amber : C.text
+    const balText  = remaining === 0 ? '—' : fmt(runningBalance)
     setColor(doc, balColor)
     doc.text(balText, colRight(cols.bal) - 1, y + 5.2, { align: 'right' })
 
