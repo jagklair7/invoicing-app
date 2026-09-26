@@ -16,6 +16,16 @@
 //    it just sends a tiny JSON body, which is what fixes the "fails on some
 //    WiFi networks" issue: large POST bodies were the thing getting dropped.
 //
+// REMINDER (new): the LEAN path also accepts `reminder: true`. When set,
+// the subject line and email copy switch to overdue-reminder framing (a
+// "Payment Reminder" badge, "X days overdue" instead of "due on...", a
+// different intro paragraph) via an isReminder flag threaded through
+// buildEmailHtml — everything else (PDF generation, Pay Now link, Resend
+// call, attachments) is identical to a normal send. This is what
+// api/cron/send-invoice-reminders.js calls once an invoice is 7 days
+// overdue and un-reminded, so the reminder logic lives in exactly one
+// place instead of being duplicated in the cron function.
+//
 // PAY NOW (new): for the LEAN path, this now computes a customer-facing
 // pay link directly from invoice.online_payment_enabled + invoice.public_token
 // (the columns InvoiceView.jsx's toggle writes) — NOT from any
@@ -720,11 +730,23 @@ async function fetchInvoiceFull(admin: any, invoiceId: string, orgId: string) {
   }
 }
 
-function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: string, total: number, payUrl: string | null) {
+// isReminder=false renders the normal "send" copy exactly as before.
+// isReminder=true swaps the header badge/subtitle and intro paragraph to
+// overdue-reminder framing; the summary box, notes, sendNote, Pay Now
+// button and footer are all unchanged either way.
+function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: string, total: number, payUrl: string | null, isReminder = false) {
+  const daysOverdue = isReminder && invoice.due_date
+    ? Math.max(0, Math.floor((Date.now() - new Date(invoice.due_date + 'T00:00:00').getTime()) / 86400000))
+    : null
+
   return `
     <div style="margin:0;padding:0;background:#f1f5f9;">
       <div style="max-width:640px;margin:0 auto;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
         <div style="background:#1e293b;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+          ${isReminder ? `
+          <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#fca5a5;font-weight:700;margin-bottom:6px;">
+            Payment Reminder
+          </div>` : ''}
           <div style="font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;">
             ${COMPANY.name || 'Invoice'}
           </div>
@@ -732,13 +754,17 @@ function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: str
             Invoice ${invoice.number}
           </div>
           <div style="font-size:14px;color:#cbd5e1;margin-top:8px;">
-            ${fmt(total)} due${invoice.due_date ? ` on ${fmtDate(invoice.due_date)}` : ''}
+            ${isReminder
+              ? `${fmt(total)} — ${daysOverdue} day${daysOverdue === 1 ? '' : 's'} overdue`
+              : `${fmt(total)} due${invoice.due_date ? ` on ${fmtDate(invoice.due_date)}` : ''}`}
           </div>
         </div>
         <div style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;padding:32px;">
           <p style="font-size:16px;line-height:1.6;margin:0 0 18px;">Hi ${customer?.name || 'there'},</p>
           <p style="font-size:14px;line-height:1.7;color:#475569;margin:0 0 24px;">
-            Please find your invoice attached. A summary is included below for quick reference.
+            ${isReminder
+              ? `This is a friendly reminder that invoice ${invoice.number} is now overdue and remains unpaid. The invoice is attached again for your convenience.`
+              : `Please find your invoice attached. A summary is included below for quick reference.`}
           </p>
           <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin:0 0 24px;">
             <div style="display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
@@ -811,6 +837,8 @@ serve(async (req) => {
 
     // ── LEAN path: server generates the PDF + HTML itself ──────────────────
     if (body.invoiceId) {
+      const isReminder = !!body.reminder
+
       const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
       const {
         invoice, customer, COMPANY, productMap, items, payments, parentCustomer,
@@ -831,12 +859,17 @@ serve(async (req) => {
       pdfBase64 = base64Encode(new Uint8Array(pdfBytes))
       filename  = `${invoice.number || 'invoice'}-${(customer?.name || 'invoice').replace(/\s+/g, '-')}.pdf`
 
-      to           = body.to
-      subject      = body.subject || `Invoice ${invoice.number} from ${COMPANY.name || body.companyName || DEFAULT_SENDER_NAME}`
-      html         = buildEmailHtml(invoice, customer, COMPANY, body.sendNote || '', total, payUrl)
-      companyName  = COMPANY.name || body.companyName
-      orgId        = body.orgId
+      to      = body.to
+      subject = body.subject || (isReminder
+        ? `Payment Reminder: Invoice ${invoice.number} is overdue`
+        : `Invoice ${invoice.number} from ${COMPANY.name || body.companyName || DEFAULT_SENDER_NAME}`)
+      html        = buildEmailHtml(invoice, customer, COMPANY, body.sendNote || '', total, payUrl, isReminder)
+      companyName = COMPANY.name || body.companyName
+      orgId       = body.orgId
 
+      // Reminders are only ever sent for status='sent' invoices (enforced
+      // by the cron's query), so this stays false for them automatically —
+      // no separate isReminder check needed here.
       if (invoice.status === 'draft') {
         markSentInvoiceId = body.invoiceId
       }
@@ -867,6 +900,7 @@ serve(async (req) => {
       to, subject, hasPdf: !!pdfBase64, pdfLength: pdfBase64?.length || 0,
       orgId, companyName, planName, isFreeTier, fromAddress,
       leanPath: !!body.invoiceId,
+      reminder: !!body.reminder,
       resendKeyPresent: !!RESEND_API_KEY,
       resendKeyPrefix: RESEND_API_KEY ? RESEND_API_KEY.slice(0, 6) : null,
     })
