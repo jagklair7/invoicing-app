@@ -1014,7 +1014,7 @@ export default function Invoices() {
           </div>
 
           <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:flex-row md:items-center md:justify-start">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Sent</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Filter by date</span>
             <input
               type="date"
               value={sentDateFrom}
