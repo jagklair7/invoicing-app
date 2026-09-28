@@ -1,5 +1,6 @@
 // src/pages/Invoices.jsx
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../app/supabaseClient'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
@@ -270,20 +271,19 @@ const css = `
 `
 
 // ── Action Dropdown ───────────────────────────────────────────────────────────
+// Rendered via a portal into document.body so it isn't clipped by the table
+// wrapper's `overflow: hidden` — that clipping happens even for
+// position: fixed descendants, since it's applied at paint time based on DOM
+// ancestry, not on the fixed element's containing block. Also flips upward
+// when there isn't enough room below the trigger button (e.g. bottom row).
 function ActionMenu({ inv, onAction, isSuspended }) {
   const [open, setOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+  const [menuPos, setMenuPos] = useState({ top: -9999, left: -9999 })
   const btnRef = useRef()
+  const menuRef = useRef()
 
   function toggle(e) {
     e.stopPropagation()
-    if (!open) {
-      const rect = btnRef.current.getBoundingClientRect()
-      setMenuPos({
-        top:  rect.bottom + 6,
-        left: Math.min(rect.right - 190, window.innerWidth - 200),
-      })
-    }
     setOpen(p => !p)
   }
 
@@ -293,11 +293,42 @@ function ActionMenu({ inv, onAction, isSuspended }) {
     onAction(action, inv)
   }
 
+  // Measure the menu after it mounts (off-screen) and before paint, then
+  // position it — flipping upward if it would run past the bottom of the
+  // viewport, and clamping horizontally so it never runs off either edge.
+  useLayoutEffect(() => {
+    if (!open) return
+    const btn = btnRef.current
+    const menu = menuRef.current
+    if (!btn || !menu) return
+
+    const rect = btn.getBoundingClientRect()
+    const menuHeight = menu.offsetHeight
+    const menuWidth = menu.offsetWidth
+    const gap = 6
+
+    const spaceBelow = window.innerHeight - rect.bottom
+    const flipUp = spaceBelow < menuHeight + gap && rect.top > menuHeight + gap
+    const top = flipUp ? rect.top - menuHeight - gap : rect.bottom + gap
+
+    let left = rect.right - menuWidth
+    left = Math.min(left, window.innerWidth - menuWidth - 8)
+    left = Math.max(left, 8)
+
+    setMenuPos({ top, left })
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     const close = () => setOpen(false)
     document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true) // capture: any ancestor scrolling too
+    return () => {
+      document.removeEventListener('click', close)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+    }
   }, [open])
 
   const isOverdue = inv.due_date && new Date(inv.due_date) < new Date() && inv.status === 'sent'
@@ -305,9 +336,13 @@ function ActionMenu({ inv, onAction, isSuspended }) {
   return (
     <div className="act-wrap" onClick={e => e.stopPropagation()}>
       <button ref={btnRef} className="act-btn" onClick={toggle} title="Actions">⋯</button>
-      {open && (
-        <div className="act-menu" style={{ top: menuPos.top, left: menuPos.left }}
-          onClick={e => e.stopPropagation()}>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          className="act-menu"
+          style={{ top: menuPos.top, left: menuPos.left }}
+          onClick={e => e.stopPropagation()}
+        >
           <div className="act-group">
             <button className="act-item" onClick={e => pick('view', e)}>
               <span className="act-item-icon">👁</span> View
@@ -348,7 +383,8 @@ function ActionMenu({ inv, onAction, isSuspended }) {
               <span className="act-item-icon">🗑</span> Delete
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
