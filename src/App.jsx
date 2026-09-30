@@ -26,6 +26,8 @@ import AdminPanel        from './pages/admin/AdminPanel.jsx'
 import GlobalAnalytics   from './pages/admin/GlobalAnalytics.jsx'
 import Organizations     from './pages/admin/Organizations.jsx'
 import SeedPlans         from './pages/admin/SeedPlans.jsx'
+import TrialRequests     from './pages/admin/TrialRequests.jsx'
+import ProTrialCard      from './components/ProTrialCard.jsx'
 import { useOrg } from './context/OrgContext'
 import OrgSwitcher       from './components/OrgSwitcher.jsx'
 import Estimates         from './pages/Estimates.jsx'
@@ -119,6 +121,8 @@ export default function App() {
         {/* ── Everything else lives inside the app shell ────────────── */}
         <Route path="/*" element={
           <Layout session={session}>
+            {/* Pro trial banner / apply card — renders nothing when not applicable */}
+            <ProTrialCard />
             <Routes>
               <Route path="/login"         element={!session ? <Login />  : <Navigate to="/" replace />} />
               <Route path="/signup"        element={!session ? <Signup /> : <Navigate to="/" replace />} />
@@ -142,6 +146,11 @@ export default function App() {
               <Route path="/admin/seed-plans" element={
                 <SuperAdminRoute session={session}><SeedPlans /></SuperAdminRoute>
               } />
+              <Route path="/admin/trials" element={
+                <SuperAdminRoute session={session}><TrialRequests /></SuperAdminRoute>
+              } />
+              {/* Link used in the trial-request email */}
+              <Route path="/platform-admin/trials" element={<Navigate to="/admin/trials" replace />} />
               <Route path="/admin/*" element={
                 <SuperAdminRoute session={session}><AdminPanel /></SuperAdminRoute>
               } />
