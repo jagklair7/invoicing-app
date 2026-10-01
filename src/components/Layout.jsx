@@ -122,6 +122,17 @@ function StatsIcon() {
     </svg>
   )
 }
+// New — for the Pro Trials admin link (a small stopwatch, same 16x16 stroke
+// style as the other admin icons).
+function TrialIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="9" r="5.5" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M8 6.5V9l1.8 1.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity=".7"/>
+      <path d="M6 1.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".6"/>
+    </svg>
+  )
+}
 function VendorIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -183,7 +194,9 @@ function MoreIcon() {
 }
 
 // ── NavItem (desktop sidebar + drawer) ─────────────────────────────────────
-function NavItem({ to, label, icon, end, onClick }) {
+// `badge` is optional: a number > 0 renders a small count pill on the right
+// (used for pending Pro trial requests).
+function NavItem({ to, label, icon, end, onClick, badge }) {
   return (
     <NavLink
       to={to}
@@ -202,6 +215,16 @@ function NavItem({ to, label, icon, end, onClick }) {
             {icon}
           </span>
           {label}
+          {badge > 0 && (
+            <span style={{
+              marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 6px',
+              borderRadius: 9999, background: '#0d7377', color: 'white',
+              fontSize: 10, fontWeight: 700,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {badge}
+            </span>
+          )}
         </>
       )}
     </NavLink>
@@ -256,6 +279,7 @@ function pageTitleFor(pathname) {
     ['/purchase-orders', 'Purchase Orders'],
     ['/settings', 'Settings'],
     ['/admin/analytics', 'Analytics'],
+    ['/admin/trials', 'Pro Trials'],
     ['/admin', 'Admin Panel'],
     ['/organizations', 'Organizations'],
   ]
@@ -276,16 +300,22 @@ export default function Layout({ children, session }) {
   const [sidebarWidth, setSidebarWidth] = useState(224)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
 
-  // Height of the bottom "Admin" block (Admin Panel/Analytics/Organizations/
-  // Settings/Logout). Same drag-to-resize idea as sidebarWidth above, just
-  // vertical: dragging the handle moves the boundary between the main nav
-  // list and this block up or down. bottomAnchorRef is a zero-height div
-  // pinned to the very bottom of the sidebar's flex column, so its position
-  // stays put regardless of adminHeight — that's what "up" and "down" are
-  // measured against.
-  const [adminHeight, setAdminHeight] = useState(200)
+  // Height of the bottom "Admin" block (Admin Panel/Analytics/Pro Trials/
+  // Organizations/Settings/Logout). Same drag-to-resize idea as sidebarWidth
+  // above, just vertical: dragging the handle moves the boundary between the
+  // main nav list and this block up or down. bottomAnchorRef is a zero-height
+  // div pinned to the very bottom of the sidebar's flex column, so its
+  // position stays put regardless of adminHeight — that's what "up" and
+  // "down" are measured against. Default raised from 200 to 244 to fit the
+  // added Pro Trials link.
+  const [adminHeight, setAdminHeight] = useState(244)
   const [isResizingAdmin, setIsResizingAdmin] = useState(false)
   const bottomAnchorRef = useRef(null)
+
+  // Pending Pro trial requests — badge on the Admin > Pro Trials link
+  // (super admins only; the "Super admins can manage trial requests" RLS
+  // policy is what permits this count).
+  const [pendingTrials, setPendingTrials] = useState(0)
 
   function resizeSidebar(event) {
     setSidebarWidth(Math.min(360, Math.max(180, event.clientX)))
@@ -309,6 +339,19 @@ export default function Layout({ children, session }) {
 
   // Close the drawer automatically whenever the route changes.
   useEffect(() => { setDrawerOpen(false) }, [location.pathname])
+
+  // Refresh the pending-trials count on every navigation, so it updates
+  // right after approving or denying a request on /admin/trials.
+  useEffect(() => {
+    if (!isSuperAdmin) { setPendingTrials(0); return }
+    let cancelled = false
+    supabase
+      .from('trial_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .then(({ count }) => { if (!cancelled) setPendingTrials(count || 0) })
+    return () => { cancelled = true }
+  }, [isSuperAdmin, location.pathname])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -393,8 +436,9 @@ export default function Layout({ children, session }) {
 
   const drawerAdminNav = (
     <>
-      {isSuperAdmin && <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} onClick={() => setDrawerOpen(false)} />}
+      {isSuperAdmin && <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} end onClick={() => setDrawerOpen(false)} />}
       {isSuperAdmin && <NavItem to="/admin/analytics" label="Analytics" icon={<StatsIcon />} onClick={() => setDrawerOpen(false)} />}
+      {isSuperAdmin && <NavItem to="/admin/trials" label="Pro Trials" icon={<TrialIcon />} badge={pendingTrials} onClick={() => setDrawerOpen(false)} />}
       {isSuperAdmin && <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} onClick={() => setDrawerOpen(false)} />}
       {flags.settings !== false && (
         <NavItem to="/settings" label="Settings" icon={<SetIcon />} onClick={() => setDrawerOpen(false)} />
@@ -527,8 +571,9 @@ export default function Layout({ children, session }) {
           <div style={{ padding: '0 6px 6px', fontSize: 10, fontWeight: 600, color: '#cbd5e1', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             Admin
           </div>
-          {isSuperAdmin && <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} />}
+          {isSuperAdmin && <NavItem to="/admin" label="Admin Panel" icon={<AdminIcon />} end />}
           {isSuperAdmin && <NavItem to="/admin/analytics" label="Analytics" icon={<StatsIcon />} />}
+          {isSuperAdmin && <NavItem to="/admin/trials" label="Pro Trials" icon={<TrialIcon />} badge={pendingTrials} />}
           {isSuperAdmin && <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} />}
           {flags.settings !== false && (
             <NavItem to="/settings" label="Settings" icon={<SetIcon />} />
