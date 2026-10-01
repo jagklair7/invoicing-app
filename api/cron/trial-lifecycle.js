@@ -6,9 +6,11 @@
 //   2. Sends the "trial ends in 3 days" warning by invoking the
 //      send-trial-warning Edge Function (same pattern as
 //      generate-recurring-invoices.js invoking send-invoice).
+//   3. Sends the "trial has ended" email for trials downgraded in the last
+//      3 days that haven't been notified yet (also retries earlier failures)
+//      by invoking the send-trial-ended Edge Function.
 //
-// Expiry runs first so an org that just lapsed never gets a
-// "3 days left" email.
+// Expiry runs first so an org that just lapsed never gets a "3 days left" email.
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -18,14 +20,16 @@ const supabase = createClient(
 )
 
 const WARNING_DAYS = 3
+const ENDED_NOTICE_DAYS = 3
 
 export default async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const results = { expired: 0, warned: 0, errors: [] }
+  const results = { expired: 0, warned: 0, endedNotified: 0, errors: [] }
 
+  // 1. Expire lapsed trials
   const { data: expiredCount, error: expireErr } = await supabase.rpc('expire_pro_trials')
   if (expireErr) {
     results.errors.push({ stage: 'expire', message: expireErr.message })
@@ -34,6 +38,8 @@ export default async function handler(req, res) {
   }
 
   const now = new Date()
+
+  // 2. Warnings for trials ending within WARNING_DAYS
   const warnBy = new Date(now.getTime() + WARNING_DAYS * 24 * 60 * 60 * 1000)
 
   const { data: dueWarnings, error: warnErr } = await supabase
@@ -58,6 +64,32 @@ export default async function handler(req, res) {
       results.warned += 1
     } catch (e) {
       results.errors.push({ orgId: sub.org_id, stage: 'warn', message: e.message })
+    }
+  }
+
+  // 3. "Trial has ended" emails (new downgrades plus retries)
+  const endedSince = new Date(now.getTime() - ENDED_NOTICE_DAYS * 24 * 60 * 60 * 1000)
+
+  const { data: dueEnded, error: endedErr } = await supabase
+    .from('org_subscriptions')
+    .select('org_id')
+    .not('trial_ended_at', 'is', null)
+    .gt('trial_ended_at', endedSince.toISOString())
+    .is('trial_ended_email_sent_at', null)
+
+  if (endedErr) {
+    results.errors.push({ stage: 'ended-query', message: endedErr.message })
+  } else {
+    for (const sub of dueEnded ?? []) {
+      try {
+        const { data, error: sendErr } = await supabase.functions.invoke('send-trial-ended', {
+          body: { orgId: sub.org_id },
+        })
+        if (sendErr) throw sendErr
+        if (data?.sent) results.endedNotified += 1
+      } catch (e) {
+        results.errors.push({ orgId: sub.org_id, stage: 'ended', message: e.message })
+      }
     }
   }
 
