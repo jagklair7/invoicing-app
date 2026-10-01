@@ -70,13 +70,16 @@ Deno.serve(async (req) => {
       dateStyle: 'long',
     })
     const daysLeft = Math.max(1, Math.ceil((endsMs! - now) / DAY_MS))
+    const contact = Deno.env.get('TRIAL_ADMIN_EMAIL') ?? ''
 
     await sendEmail(
       to,
       `Your Pro trial ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`,
       `<p>Your Pro trial for <strong>${esc(org.name)}</strong> ends on <strong>${endsLabel}</strong>.</p>
-       <p>To keep Pro, subscribe before then. If you don't, your account returns to the Free version
-       when the trial ends. Your existing data is kept.</p>
+       <p>To keep Pro, contact us at
+       <a href="mailto:${esc(contact)}">${esc(contact)}</a> before then and we'll set it up.
+       If you don't, your account returns to the Free version when the trial ends.
+       Your existing data is kept.</p>
        <p><a href="${Deno.env.get('APP_URL')}">Open your account</a></p>`
     )
 
