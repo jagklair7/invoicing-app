@@ -77,6 +77,39 @@ function computePayUrl(invoice: any): string | null {
   return `${APP_URL}/i/${invoice.public_token}`
 }
 
+// ── Invoice tax — MIRROR of src/utils/invoiceTax.js (keep in sync by hand) ──
+// An invoice with tax_pct NULL predates tax settings: legacy 5% GST, unrounded.
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+const fmtPct = (p: number) => String(Number(p))
+
+function taxConfigFromInvoice(invoice: any) {
+  if (!invoice || invoice.tax_pct == null) return null
+  return {
+    name: invoice.tax_name || 'Tax',
+    pct: Number(invoice.tax_pct) || 0,
+    name2: invoice.tax2_name || null,
+    pct2: Number(invoice.tax2_pct) || 0,
+  }
+}
+
+function calcInvoiceTax(subtotal: number, cfg: any) {
+  if (!cfg) {
+    const tax = subtotal * 0.05
+    return { lines: [{ label: 'Tax (5%)', amount: tax }], tax, total: subtotal + tax }
+  }
+  const sub = round2(subtotal)
+  const t1 = round2(sub * cfg.pct / 100)
+  const lines = [{ label: `${cfg.name} (${fmtPct(cfg.pct)}%)`, amount: t1 }]
+  let tax = t1
+  if (cfg.name2 && cfg.pct2 > 0) {
+    const t2 = round2(sub * cfg.pct2 / 100)
+    lines.push({ label: `${cfg.name2} (${fmtPct(cfg.pct2)}%)`, amount: t2 })
+    tax += t2
+  }
+  tax = round2(tax)
+  return { lines, tax, total: round2(sub + tax) }
+}
+
 // ── Discount math ────────────────────────────────────────────────────────────
 // Verified against src/utils/discount.js — matches exactly (percent:
 // subtotal * value/100, fixed: min(subtotal, value)).
@@ -504,8 +537,9 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
   y += 8
 
   const subtotal = items.reduce((s: number, i: any) => s + calcLineTotal(i), 0)
-  const tax      = subtotal * 0.05
-  const total    = subtotal + tax
+  const taxCalc  = calcInvoiceTax(subtotal, taxConfigFromInvoice(invoice))
+  const tax      = taxCalc.tax
+  const total    = taxCalc.total
 
   const totalPaid  = payments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0)
   const balanceDue = total - totalPaid
@@ -513,7 +547,7 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
 
   const totRows: [string, string, boolean, boolean][] = [
     ['Subtotal', fmt(subtotal), false, false],
-    ['Tax (5%)', fmt(tax), false, false],
+    ...taxCalc.lines.map((l: any): [string, string, boolean, boolean] => [l.label, fmt(l.amount), false, false]),
   ]
 
   if (totalPaid > 0) {
@@ -845,8 +879,9 @@ serve(async (req) => {
       } = await fetchInvoiceFull(supabaseAdmin, body.invoiceId, body.orgId)
 
       const subtotal = items.reduce((s: number, i: any) => s + calcLineTotal(i), 0)
-      const tax      = subtotal * 0.05
-      const total    = subtotal + tax
+      const taxCalc  = calcInvoiceTax(subtotal, taxConfigFromInvoice(invoice))
+      const tax      = taxCalc.tax
+      const total    = taxCalc.total
 
       // Computed from the invoice row itself — see computePayUrl's comment
       // for why any includePayNow/payUrl fields in the request body are

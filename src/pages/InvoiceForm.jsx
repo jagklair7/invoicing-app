@@ -8,6 +8,7 @@ import SuspendedBanner from '../components/SuspendedBanner'
 import DateInput from '../components/DateInput'
 import RichTextNotes from '../components/RichTextNotes'
 import { resolveDefaultNotes, textTemplateToHtml, isNotesEmpty } from '../utils/notesTemplate'
+import { TAX_PRESETS, calcInvoiceTax, describeTax, taxColumns, taxConfigFromSettings } from '../utils/invoiceTax'
 
 // ASSUMPTION: default payment terms not found elsewhere in this file or in
 // stored project notes — defaulting to Net 30. Adjust DEFAULT_TERMS_DAYS if
@@ -45,6 +46,13 @@ export default function InvoiceForm() {
   })
   const [items, setItems] = useState([{ product_id: '', name: '', quantity: 1, unit_price: 0 }])
 
+  // Tax: the org's default (loaded from organization_settings) unless the user
+  // picks a specific preset for this invoice. taxChoice is 'default' or a
+  // TAX_PRESETS key.
+  const [orgTaxCfg, setOrgTaxCfg] = useState(null)
+  const [taxChoice, setTaxChoice] = useState('default')
+  const taxReady = orgTaxCfg !== null
+
   // Load customers + products scoped to org
   // NOTE: added parent_customer_id + default_notes to the customers select
   // (previously id, name only) so the Notes auto-fill effect below can
@@ -64,6 +72,18 @@ export default function InvoiceForm() {
       .then(({ data }) => setProducts(data || []))
   }, [activeOrg?.orgId])
 
+  // Org default tax. If the columns don't exist yet (migration not run) or
+  // there's no settings row, this falls back to GST 5% — today's behavior.
+  useEffect(() => {
+    if (!activeOrg?.orgId) return
+    setOrgTaxCfg(null)
+    supabase.from('organization_settings')
+      .select('tax_name, tax_pct, tax2_name, tax2_pct')
+      .eq('org_id', activeOrg.orgId)
+      .maybeSingle()
+      .then(({ data }) => setOrgTaxCfg(taxConfigFromSettings(data)))
+  }, [activeOrg?.orgId])
+
   // Save whenever form state changes
  // Restore draft on mount (new invoices only)
 useEffect(() => {
@@ -74,13 +94,14 @@ useEffect(() => {
     const d = JSON.parse(saved)
     if (d.invoice) setInvoice(prev => ({ ...prev, ...d.invoice }))
     if (d.items?.length) setItems(d.items)
+    if (d.taxChoice) setTaxChoice(d.taxChoice)
   } catch {}
 }, []) // runs once on mount
 
   useEffect(() => {
   if (!isNew) return
-  localStorage.setItem(DRAFT_KEY, JSON.stringify({ invoice, items }))
-}, [invoice, items])
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({ invoice, items, taxChoice }))
+}, [invoice, items, taxChoice])
 
   // Auto-fill Notes from the selected customer's default_notes template
   // (inherited from its management company if the customer has none of
@@ -132,9 +153,16 @@ useEffect(() => {
     }
   }
 
+  // Effective tax for this invoice: a chosen preset, else the org default.
+  const presetCfg = TAX_PRESETS.find(p => p.key === taxChoice)
+  const activeTaxCfg = (taxChoice !== 'default' && presetCfg)
+    ? { name: presetCfg.name, pct: presetCfg.pct, name2: presetCfg.name2, pct2: presetCfg.pct2 }
+    : (orgTaxCfg || taxConfigFromSettings(null))
+
   const subtotal = items.reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0), 0)
-  const tax      = subtotal * 0.05
-  const total    = subtotal + tax
+  const taxCalc  = calcInvoiceTax(subtotal, activeTaxCfg)
+  const tax      = taxCalc.tax
+  const total    = taxCalc.total
 
 function handleProductSelect(idx, productId) {
   const product = products.find(p => p.id === productId)
@@ -165,6 +193,7 @@ function handleProductSelect(idx, productId) {
     e.preventDefault()
     if (!invoice.customer_id) return alert('Select a customer')
     if (!activeOrg?.orgId)    return alert('No active organization')
+    if (!taxReady)            return alert('Still loading tax settings — try again in a moment.')
 
     const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
     if (!allowed) {
@@ -183,6 +212,7 @@ function handleProductSelect(idx, productId) {
           due_date: invoice.due_date || null,
           po_number: invoice.po_number || null,
           subtotal, tax, total,
+          ...taxColumns(activeTaxCfg),
         }])
         .select()
         .single()
@@ -266,6 +296,16 @@ function handleProductSelect(idx, productId) {
             <option value="sent">Sent</option>
             <option value="paid">Paid</option>
             <option value="void">Void</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tax</label>
+          <select className="w-full p-2 border rounded-lg text-sm" value={taxChoice}
+            onChange={e => setTaxChoice(e.target.value)}>
+            <option value="default">
+              Organization default — {describeTax(orgTaxCfg || taxConfigFromSettings(null))}
+            </option>
+            {TAX_PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
           </select>
         </div>
         <div className="flex items-end">
@@ -361,10 +401,12 @@ function handleProductSelect(idx, productId) {
       <span className="text-gray-400">Subtotal</span>
       <span className="text-gray-700 w-24 text-right">${subtotal.toFixed(2)}</span>
     </div>
-    <div className="flex gap-10 text-sm">
-      <span className="text-gray-400">Tax (5%)</span>
-      <span className="text-gray-700 w-24 text-right">${tax.toFixed(2)}</span>
-    </div>
+    {taxCalc.lines.map(line => (
+      <div className="flex gap-10 text-sm" key={line.label}>
+        <span className="text-gray-400">{line.label}</span>
+        <span className="text-gray-700 w-24 text-right">${line.amount.toFixed(2)}</span>
+      </div>
+    ))}
     <div className="w-36 h-px bg-gray-200 my-1" />
     <div className="flex gap-10">
       <span className="text-sm font-semibold text-gray-700">Total</span>
@@ -383,7 +425,7 @@ function handleProductSelect(idx, productId) {
         />
       </div>
 
-      <button type="submit" disabled={saving}
+      <button type="submit" disabled={saving || !taxReady}
         className="w-full bg-teal-700 text-white py-3 rounded-xl font-semibold hover:bg-teal-600 disabled:opacity-50 transition-colors">
         {saving ? 'Saving…' : 'Create Invoice'}
       </button>

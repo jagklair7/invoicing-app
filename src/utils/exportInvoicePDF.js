@@ -7,6 +7,7 @@
 //           await exportInvoicePDF(invoice, customer, items, orgId)
 //           await exportBatchInvoicesPDF([{ invoice, customer }, ...], orgId, 'Ayre & Oxford')
 import { calcLineTotal, calcLineDiscount } from './discount'
+import { calcInvoiceTax, taxConfigFromInvoice } from './invoiceTax'
 import { jsPDF } from 'jspdf'
 import { supabase } from '../app/supabaseClient' // Make sure this path is correct
 
@@ -537,8 +538,9 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
 
   // ── 5. Totals block ────────────────────────────────────────────────────────
   const subtotal = items.reduce((s, i) => s + calcLineTotal(i), 0)
-  const tax      = subtotal * 0.05
-  const total    = subtotal + tax
+  const taxCalc  = calcInvoiceTax(subtotal, taxConfigFromInvoice(invoice))
+  const tax      = taxCalc.tax
+  const total    = taxCalc.total
 
   const totalPaid   = payments.reduce((s, p) => s + Number(p.amount || 0), 0)
   const balanceDue  = total - totalPaid
@@ -547,7 +549,7 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
   // Row shape: [label, value, isGrand, isPaidGreen]
   const totRows = [
     ['Subtotal', fmt(subtotal), false, false],
-    ['Tax (5%)', fmt(tax), false, false],
+    ...taxCalc.lines.map(l => [l.label, fmt(l.amount), false, false]),
   ]
 
   if (totalPaid > 0) {

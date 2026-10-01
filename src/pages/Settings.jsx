@@ -4,6 +4,7 @@ import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { useNavigate } from 'react-router-dom'
 import { getPlanStatus } from '../utils/planLimits'
+import TaxSettingsCard from '../components/TaxSettingsCard'
 
 const css = `
   .settings-root {
@@ -688,7 +689,7 @@ export default function Settings() {
           <div className="settings-card-title">Tax Information</div>
           <div className="settings-grid">
             <div className="settings-field">
-              <label className="settings-label">GST Registration Number</label>
+              <label className="settings-label">GST/HST Registration Number</label>
               <input className="settings-input" placeholder="e.g. 123456789 RT0001"
                 value={formData.gst_number}
                 onChange={e => setFormData(prev => ({ ...prev, gst_number: e.target.value }))} />
@@ -696,6 +697,9 @@ export default function Settings() {
             </div>
           </div>
         </div>
+
+        {/* ── Invoice tax (default for new invoices) ── */}
+        <TaxSettingsCard />
 
         {/* ── Save ── */}
         <button className="settings-save-btn" onClick={handleSave} disabled={saving || uploading}>

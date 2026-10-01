@@ -92,6 +92,14 @@ const AB_BASIC_PERSONAL_2026 = 22769
 const AB_LOWEST_RATE_2026 = 0.08         // used to compute K1P (BPA credit) and K2P (CPP/EI credit)
 const AB_K5P_THRESHOLD = 4896            // AB-specific clawback: (K1P+K2P - 4896) * 0.25, floored at 0
 
+// Payroll runs are only supported where the deduction formulas above are
+// actually implemented. AB_BRACKETS_2026, AB_BASIC_PERSONAL_2026 and the
+// K1P/K2P/K5P steps are Alberta-specific, and Quebec uses a different
+// pension/EI/withholding system. Keep this list in sync with Employees.jsx.
+const PAYROLL_SUPPORTED_PROVINCES = ['AB']
+const isPayrollSupported = (employee) =>
+  PAYROLL_SUPPORTED_PROVINCES.includes(employee?.province || 'AB')
+
 // Pay periods per year by frequency
 const PAY_PERIODS = {
   weekly:      52,
@@ -866,7 +874,13 @@ export default function Payroll() {
     e.preventDefault()
     setStatusMsg(null)
     if (!canPayroll) return setStatusMsg({ ok: false, text: 'Payroll not available on your plan.' })
-    if (!selectedEmp) return setStatusMsg({ ok: false, text: 'Select an employee.' })
+        if (!selectedEmp) return setStatusMsg({ ok: false, text: 'Select an employee.' })
+    if (!isPayrollSupported(selectedEmp)) {
+      return setStatusMsg({
+        ok: false,
+        text: `Payroll can't be run for ${selectedEmp.name} yet: ${selectedEmp.province} isn't supported. Payroll currently supports Alberta employees only.`,
+      })
+    }
     if (!form.period_start || !form.period_end || !form.pay_date) return setStatusMsg({ ok: false, text: 'Fill in all date fields.' })
     if (selectedEmp.pay_type === 'hourly' && !form.hours_worked) return setStatusMsg({ ok: false, text: 'Enter hours worked.' })
 
@@ -1117,8 +1131,8 @@ export default function Payroll() {
                   onChange={e => setForm(p => ({ ...p, employee_id: e.target.value, hours_worked: '', ei_exempt_override: null }))}>
                   <option value="">Select employee…</option>
                   {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} — {emp.pay_type === 'hourly' ? `$${Number(emp.pay_rate).toFixed(2)}/hr` : `$${Number(emp.pay_rate).toFixed(2)}/yr`} · {emp.pay_frequency} · {emp.province}
+                    <option key={emp.id} value={emp.id} disabled={!isPayrollSupported(emp)}>
+                      {emp.name} — {emp.pay_type === 'hourly' ? `$${Number(emp.pay_rate).toFixed(2)}/hr` : `$${Number(emp.pay_rate).toFixed(2)}/yr`} · {emp.pay_frequency} · {emp.province}{!isPayrollSupported(emp) ? ' (not supported yet)' : ''}
                     </option>
                   ))}
                 </select>

@@ -14,9 +14,12 @@
 //     read organization_settings.invoice_prefix (falling back to 'INV-'),
 //     look at the most recent invoice number for the org, increment it.
 //     A template's own invoice_number_prefix (if set) overrides the org default.
-//   - Tax is hardcoded at 5% in InvoiceForm.jsx, so this matches that —
-//     flag if tax should vary by customer/org in some cases you know of
-//     that aren't visible in this file.
+//   - Tax now comes from the organization's default tax in
+//     organization_settings (tax_name / tax_pct / tax2_name / tax2_pct), and the
+//     choice is saved on the invoice row, same as InvoiceForm.jsx. The helper
+//     below is a hand-kept MIRROR of src/utils/invoiceTax.js — this function
+//     can't import from src/. Change both together. (Defaults to GST 5% when
+//     the org has no tax settings, which is the old hardcoded behavior.)
 //   - Does NOT auto-charge the customer's card (confirmed out of scope).
 //     It only generates and sends the invoice; the customer pays manually
 //     via Pay Now if online_payment_enabled is set on the template.
@@ -32,8 +35,53 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const TAX_RATE = 0.05
 const DEFAULT_TERMS_DAYS = 30 // matches InvoiceForm.jsx's DEFAULT_TERMS_DAYS
+
+// ── Tax (mirror of src/utils/invoiceTax.js) ──────────────────────────────────
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100
+const fmtPct = (p) => String(Number(p))
+
+function taxConfigFromSettings(s) {
+  if (!s || s.tax_pct == null) return { name: 'GST', pct: 5, name2: null, pct2: 0 }
+  return {
+    name: s.tax_name || 'GST',
+    pct: Number(s.tax_pct) || 0,
+    name2: s.tax2_name || null,
+    pct2: Number(s.tax2_pct) || 0,
+  }
+}
+
+function taxColumns(cfg) {
+  return {
+    tax_name: cfg.name,
+    tax_pct: cfg.pct,
+    tax2_name: cfg.name2 || null,
+    tax2_pct: cfg.pct2 || 0,
+  }
+}
+
+function calcInvoiceTax(subtotal, cfg) {
+  const sub = round2(subtotal)
+  const t1 = round2(sub * cfg.pct / 100)
+  let tax = t1
+  if (cfg.name2 && cfg.pct2 > 0) tax += round2(sub * cfg.pct2 / 100)
+  tax = round2(tax)
+  return { tax, total: round2(sub + tax) }
+}
+
+// One settings lookup per org per run.
+const orgTaxCache = new Map()
+async function getOrgTaxConfig(orgId) {
+  if (orgTaxCache.has(orgId)) return orgTaxCache.get(orgId)
+  const { data } = await supabase
+    .from('organization_settings')
+    .select('tax_name, tax_pct, tax2_name, tax2_pct')
+    .eq('org_id', orgId)
+    .maybeSingle()
+  const cfg = taxConfigFromSettings(data)
+  orgTaxCache.set(orgId, cfg)
+  return cfg
+}
 
 export default async function handler(req, res) {
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -60,8 +108,8 @@ export default async function handler(req, res) {
         (s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0),
         0
       )
-      const tax = subtotal * TAX_RATE
-      const total = subtotal + tax
+      const taxCfg = await getOrgTaxConfig(template.org_id)
+      const { tax, total } = calcInvoiceTax(subtotal, taxCfg)
 
       const { data: newInvoice, error: invErr } = await supabase
         .from('invoices')
@@ -77,6 +125,7 @@ export default async function handler(req, res) {
           subtotal,
           tax,
           total,
+          ...taxColumns(taxCfg),
           recurring_template_id: template.id,
         })
         .select()

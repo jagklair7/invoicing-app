@@ -8,6 +8,16 @@ const PROVINCES = [
   'AB','BC','MB','NB','NL','NS','ON','PE','QC','SK','NT','NU','YT'
 ]
 
+// Payroll calculations in Payroll.jsx only implement Alberta (provincial
+// brackets and credits are Alberta's). Keep this list in sync with
+// PAYROLL_SUPPORTED_PROVINCES in Payroll.jsx.
+const PAYROLL_SUPPORTED_PROVINCES = ['AB']
+
+// Default federal TD1 credit for new employees. Taken from
+// FEDERAL_BASIC_PERSONAL_2026 in Payroll.jsx (this used to be 15705, which no
+// longer matched). Keep the two in sync each year.
+const DEFAULT_TD1_FEDERAL = 16452
+
 const PAY_TYPES = [
   { value: 'hourly', label: 'Hourly' },
   { value: 'salary', label: 'Salary' },
@@ -29,7 +39,7 @@ const DEFAULT_FORM = {
   pay_rate: '0.00',
   pay_frequency: 'biweekly',
   province: 'AB',
-  td1_credits: '15705',
+  td1_credits: String(DEFAULT_TD1_FEDERAL),
   start_date: '',
   status: 'active',
   self_employed: false,
@@ -126,7 +136,7 @@ export default function Employees() {
       pay_rate: parseFloat(formData.pay_rate) || 0,
       pay_frequency: formData.pay_frequency,
       province: formData.province,
-      td1_credits: parseFloat(formData.td1_credits) || 15705,
+      td1_credits: parseFloat(formData.td1_credits) || DEFAULT_TD1_FEDERAL,
       start_date: formData.start_date || null,
       status: formData.status,
       self_employed: !!formData.self_employed,
@@ -165,7 +175,7 @@ export default function Employees() {
       pay_rate: employee.pay_rate?.toString() || '0.00',
       pay_frequency: employee.pay_frequency || 'biweekly',
       province: employee.province || 'AB',
-      td1_credits: employee.td1_credits?.toString() || '15705',
+      td1_credits: employee.td1_credits?.toString() || String(DEFAULT_TD1_FEDERAL),
       start_date: employee.start_date || '',
       status: employee.status || 'active',
       self_employed: !!employee.self_employed,
@@ -294,6 +304,11 @@ export default function Employees() {
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
               {PROVINCES.map(code => <option key={code} value={code}>{code}</option>)}
             </select>
+            {!PAYROLL_SUPPORTED_PROVINCES.includes(formData.province) && (
+              <p className="text-xs text-amber-700 mt-1">
+                Payroll runs currently support Alberta employees only. You can save this employee, but payroll can't be run for them yet.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">TD1 credits</label>
@@ -403,6 +418,11 @@ export default function Employees() {
                     {employee.ei_exempt && !employee.self_employed && (
                       <span className="inline-flex items-center rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5">
                         EI exempt
+                      </span>
+                    )}
+                    {!PAYROLL_SUPPORTED_PROVINCES.includes(employee.province || 'AB') && (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5">
+                        {employee.province}: payroll not supported yet
                       </span>
                     )}
                   </div>

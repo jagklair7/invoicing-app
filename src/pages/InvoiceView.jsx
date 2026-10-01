@@ -14,6 +14,7 @@ import PaymentsSection from '../components/PaymentsSection'
 // Add to imports:
 import SuspendedBanner from '../components/SuspendedBanner'
 import RichTextNotes, { sanitizeNotesHtml } from '../components/RichTextNotes'
+import { calcInvoiceTax, taxConfigFromInvoice } from '../utils/invoiceTax'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
@@ -1051,8 +1052,9 @@ export default function InvoiceView() {
 
   // ── Live totals ────────────────────────────────────────────────────────────
   const editSubtotal = editItems.reduce((s, i) => s + calcLineTotal(i), 0)
-  const editTax      = editSubtotal * 0.05
-  const editTotal    = editSubtotal + editTax
+  const editTaxCalc  = calcInvoiceTax(editSubtotal, taxConfigFromInvoice(invoice))
+  const editTax      = editTaxCalc.tax
+  const editTotal    = editTaxCalc.total
 
   // ── Save ───────────────────────────────────────────────────────────────────
   async function saveChanges() {
@@ -1155,6 +1157,10 @@ export default function InvoiceView() {
           status:      'draft',
           subtotal:    invoice.subtotal,
           tax:         invoice.tax,
+          tax_name:    invoice.tax_name,
+          tax_pct:     invoice.tax_pct,
+          tax2_name:   invoice.tax2_name,
+          tax2_pct:    invoice.tax2_pct,
           total:       invoice.total,
           notes:       invoice.notes || null,
         })
@@ -1218,8 +1224,9 @@ export default function InvoiceView() {
 
   // ── Computed display totals ────────────────────────────────────────────────
   const subtotal = items.reduce((s, i) => s + calcLineTotal(i), 0)
-  const tax      = subtotal * 0.05
-  const total    = subtotal + tax
+  const taxCalc  = calcInvoiceTax(subtotal, taxConfigFromInvoice(invoice))
+  const tax      = taxCalc.tax
+  const total    = taxCalc.total
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) return (
@@ -1464,10 +1471,12 @@ export default function InvoiceView() {
                     <span className="inv-total-label">Subtotal</span>
                     <span className="inv-total-value">{fmt(subtotal)}</span>
                   </div>
-                  <div className="inv-total-row">
-                    <span className="inv-total-label">Tax (5%)</span>
-                    <span className="inv-total-value">{fmt(tax)}</span>
-                  </div>
+                  {taxCalc.lines.map(line => (
+                    <div className="inv-total-row" key={line.label}>
+                      <span className="inv-total-label">{line.label}</span>
+                      <span className="inv-total-value">{fmt(line.amount)}</span>
+                    </div>
+                  ))}
                   <div className="inv-total-divider" />
                   <div className="inv-total-row inv-total-row--grand">
                     <span className="inv-total-label">Total Due</span>
@@ -1687,10 +1696,12 @@ export default function InvoiceView() {
                     <span className="inv-total-label">Subtotal</span>
                     <span className="inv-total-value">{fmt(editSubtotal)}</span>
                   </div>
-                  <div className="inv-total-row">
-                    <span className="inv-total-label">Tax (5%)</span>
-                    <span className="inv-total-value">{fmt(editTax)}</span>
-                  </div>
+                  {editTaxCalc.lines.map(line => (
+                    <div className="inv-total-row" key={line.label}>
+                      <span className="inv-total-label">{line.label}</span>
+                      <span className="inv-total-value">{fmt(line.amount)}</span>
+                    </div>
+                  ))}
                   <div className="inv-total-divider" />
                   <div className="inv-total-row inv-total-row--grand">
                     <span className="inv-total-label">Total</span>
