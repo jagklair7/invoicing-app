@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../app/supabaseClient";
 import { useOrg } from "../context/OrgContext";
 import { useNavigate } from "react-router-dom";
-import { checkCanCreateOrg } from '../utils/planLimits'
+import { checkCanCreateOrg } from "../utils/planLimits";
 
 export default function CreateOrganization() {
   const [name, setName] = useState("");
