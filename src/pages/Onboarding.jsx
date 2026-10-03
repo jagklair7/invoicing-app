@@ -5,6 +5,7 @@ import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { checkCanCreateOrg } from '../utils/planLimits'
 import { useHelcimPay } from '../hooks/useHelcimPay'
+import { startPlanCheckout, confirmPlanPayment } from '../utils/planCheckout'
 
 const css = `
 .onboarding-wrap {
@@ -273,6 +274,7 @@ export default function Onboarding() {
       .select('*')
       .eq('user_id', userId)
       .eq('status', 'pending')
+      .eq('verified', true)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -343,15 +345,21 @@ export default function Onboarding() {
 
   // NOTE: `txn?.transactionId` is an assumed field name for HelcimPay.js's
   // SUCCESS payload — verify against a real console.log(txn) during testing.
-  async function handlePaymentSuccess(txn) {
-    const transactionId = txn?.transactionId ?? txn?.data?.transactionId ?? null
-    if (!transactionId) {
-      console.warn('Helcim payment succeeded but no transactionId was found on the payload:', txn)
-      setError('Payment succeeded but we could not read the transaction reference. Contact support — do not pay again.')
+  // The browser no longer records the payment itself. It hands Helcim's response to
+  // the server (api/helcim-plan-confirm), which verifies it with Helcim and writes
+  // the pending_org_payments row. Only then is the organization created.
+  async function handlePaymentSuccess(txn, meta) {
+    try {
+      const { pendingPaymentId } = await confirmPlanPayment(meta)
+      await resolvePendingPayment(pendingPaymentId)
+    } catch (err) {
+      await checkForPendingPayment()
+      setError(
+        err.message ||
+        'Payment succeeded but we hit an error finishing setup. Your payment is on file — click "Resume setup" below to try again.'
+      )
       setSaving(false)
-      return
     }
-
     try {
       // Record the successful payment FIRST, as its own simple insert,
       // before attempting the multi-table org creation. If org creation
@@ -404,8 +412,10 @@ export default function Onboarding() {
     setSaving(false)
   }
 
-  const { openPayment: openHelcimPayment } = useHelcimPay({
-    amount: selectedPlan?.price_monthly || 0,
+    const { openPayment: openHelcimPayment } = useHelcimPay({
+    // The server prices the plan and starts the checkout; nothing about the
+    // amount comes from the browser.
+    initRequest: () => startPlanCheckout({ planId: selectedPlanId, orgName: orgName.trim() }),
     onSuccess: handlePaymentSuccess,
     onError: handlePaymentError,
   })

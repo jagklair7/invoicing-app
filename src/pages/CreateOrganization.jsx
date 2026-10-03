@@ -4,6 +4,7 @@ import { useOrg } from "../context/OrgContext";
 import { useNavigate } from "react-router-dom";
 import { checkCanCreateOrg } from "../utils/planLimits";
 import { useHelcimPay } from "../hooks/useHelcimPay";
+import { startPlanCheckout, confirmPlanPayment } from '../utils/planCheckout'
 
 // Same GST handling as Onboarding.jsx — keep the two in sync.
 const GST_RATE = 0.05;
@@ -52,6 +53,7 @@ export default function CreateOrganization() {
       .select("*")
       .eq("user_id", userId)
       .eq("status", "pending")
+      .eq("verified", true)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -116,13 +118,20 @@ export default function CreateOrganization() {
   }
 
   // NOTE: `txn?.transactionId` is the same assumed field name as Onboarding.jsx.
-  async function handlePaymentSuccess(txn) {
-    const transactionId = txn?.transactionId ?? txn?.data?.transactionId ?? null;
-    if (!transactionId) {
-      console.warn("Helcim payment succeeded but no transactionId was found on the payload:", txn);
-      setError("Payment succeeded but we could not read the transaction reference. Contact support — do not pay again.");
-      setLoading(false);
-      return;
+  // The browser no longer records the payment itself. It hands Helcim's response to
+  // the server (api/helcim-plan-confirm), which verifies it with Helcim and writes
+  // the pending_org_payments row. Only then is the organization created.
+  async function handlePaymentSuccess(txn, meta) {
+    try {
+      const { pendingPaymentId } = await confirmPlanPayment(meta)
+      await resolvePendingPayment(pendingPaymentId)
+    } catch (err) {
+      await checkForPendingPayment()
+      setError(
+        err.message ||
+        'Payment succeeded but we hit an error finishing setup. Your payment is on file — click "Resume setup" below to try again.'
+      )
+      setLoading(false)
     }
 
     try {
@@ -172,7 +181,8 @@ export default function CreateOrganization() {
   }
 
   const { openPayment: openHelcimPayment } = useHelcimPay({
-    amount: selectedPlan?.price_monthly || 0,
+    amount: totalAmount,   // GST-inclusive, matches what the customer was shown
+    taxAmount: gstAmount,  // informational; already included in amount
     onSuccess: handlePaymentSuccess,
     onError: handlePaymentError,
   });

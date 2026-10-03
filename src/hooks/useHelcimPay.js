@@ -2,20 +2,28 @@
  * hooks/useHelcimPay.js
  *
  * Manages the full HelcimPay.js lifecycle:
- *   1. Calls /api/helcim-init to get a checkoutToken from the back-end
+ *   1. Gets a checkoutToken — from `initRequest()` if provided (plan purchases:
+ *      the server prices the plan), otherwise from /api/helcim-init
  *   2. Loads the HelcimPay.js script once (idempotent)
  *   3. Renders the payment modal via appendHelcimPayIframe()
  *   4. Listens for the payment result on the window message event
- *   5. Calls onSuccess(transaction) or onError(message) accordingly
+ *   5. Calls onSuccess(transaction, { checkoutToken, raw }) or onError(message)
  *   6. Cleans up the iFrame on unmount or after a result
  *
- * Usage:
+ * Usage (invoice charge, unchanged):
  *   const { openPayment, loading, error } = useHelcimPay({
  *     amount: invoice.total,
  *     invoiceNumber: invoice.invoice_number,
  *     customerCode: org.helcim_customer_code ?? undefined,
  *     onSuccess: async (txn) => { await markInvoicePaid(invoice.id, txn) },
  *     onError: (msg) => toast.error(msg),
+ *   })
+ *
+ * Usage (plan purchase):
+ *   useHelcimPay({
+ *     initRequest: () => startPlanCheckout({ planId, orgName }),
+ *     onSuccess: (txn, meta) => confirmPlanPayment(meta),
+ *     onError: ...
  *   })
  */
 
@@ -39,7 +47,7 @@ function loadHelcimScript() {
 }
 
 
-export function useHelcimPay({ amount, taxAmount, invoiceNumber, customerCode, onSuccess, onError }) {
+export function useHelcimPay({ amount, taxAmount, invoiceNumber, customerCode, initRequest, onSuccess, onError }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const secretTokenRef = useRef(null)
@@ -66,25 +74,32 @@ export function useHelcimPay({ amount, taxAmount, invoiceNumber, customerCode, o
       // 1. Load HelcimPay.js script
       await loadHelcimScript()
     
-      // 2. Initialize checkout session via our back-end
-      const res = await fetch('/api/helcim-init', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Number(amount).toFixed(2),
-          taxAmount: taxAmount != null ? Number(taxAmount).toFixed(2) : undefined,
-          invoiceNumber: invoiceNumber ?? undefined,
-          customerCode: customerCode ?? undefined,
-        }),
-      })
+      // 2. Initialize checkout session — via the caller's own initializer when
+      //    given (plan purchases), otherwise via our generic back-end route.
+      let data
+      if (initRequest) {
+        data = await initRequest()
+        if (!data?.checkoutToken) throw new Error('Could not initialize payment')
+      } else {
+        const res = await fetch('/api/helcim-init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: Number(amount).toFixed(2),
+            taxAmount: taxAmount != null ? Number(taxAmount).toFixed(2) : undefined,
+            invoiceNumber: invoiceNumber ?? undefined,
+            customerCode: customerCode ?? undefined,
+          }),
+        })
 
-      const data = await res.json()
+        data = await res.json()
 
-      if (!res.ok || !data.checkoutToken) {
-        throw new Error(data.error ?? 'Could not initialize payment')
+        if (!res.ok || !data.checkoutToken) {
+          throw new Error(data.error ?? 'Could not initialize payment')
+        }
       }
 
-      secretTokenRef.current = data.secretToken
+      secretTokenRef.current = data.secretToken ?? null
 
       // 3. Listen for the payment result BEFORE opening the modal
       const handleMessage = (event) => {
@@ -101,7 +116,8 @@ export function useHelcimPay({ amount, taxAmount, invoiceNumber, customerCode, o
         cleanup()
 
         if (payload.eventStatus === 'SUCCESS') {
-          onSuccess?.(payload.data ?? payload)
+          // Second argument carries what a server-side verifier needs.
+          onSuccess?.(payload.data ?? payload, { checkoutToken: data.checkoutToken, raw: payload })
         } else {
           const msg = payload.eventMessage ?? 'Payment was not completed'
           setError(msg)
@@ -126,7 +142,7 @@ export function useHelcimPay({ amount, taxAmount, invoiceNumber, customerCode, o
     } finally {
       setLoading(false)
     }
-  }, [amount, taxAmount, invoiceNumber, customerCode, onSuccess, onError, cleanup])
+  }, [amount, taxAmount, invoiceNumber, customerCode, initRequest, onSuccess, onError, cleanup])
 
   return { openPayment, loading, error }
 }
