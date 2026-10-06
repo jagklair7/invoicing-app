@@ -11,11 +11,12 @@ export async function checkCanCreateInvoice(orgId) {
 
   const { data: sub } = await supabase
     .from('org_subscriptions')
-    .select('plan_id, plans(name, max_invoices)')
+    .select('plan_id, plans(name, display_name, max_invoices)')
     .eq('org_id', orgId)
     .single()
 
   const planName = sub?.plans?.name
+  const planLabel = sub?.plans?.display_name || planName
   const maxInvoices = sub?.plans?.max_invoices
 
   // No subscription row, or a plan with unlimited invoices → allow
@@ -29,7 +30,7 @@ export async function checkCanCreateInvoice(orgId) {
     if (count >= maxInvoices) {
       return {
         allowed: false,
-        reason: `You've reached your ${planName} plan's limit of ${maxInvoices} invoices this month. Upgrade to create more.`,
+        reason: `You've reached your ${planLabel} plan's limit of ${maxInvoices} invoices this month. Upgrade to create more.`,
       }
     }
     return { allowed: true }
@@ -88,7 +89,7 @@ async function countInvoicesThisMonth(orgId) {
 export async function getPlanStatus(orgId, userId) {
   const { data: sub } = await supabase
     .from('org_subscriptions')
-    .select('plan_id, status, plans(name, price_monthly, max_employees, max_invoices, max_orgs)')
+    .select('plan_id, status, plans(name, display_name, price_monthly, max_employees, max_invoices, max_orgs)')
     .eq('org_id', orgId)
     .single()
 
@@ -112,6 +113,7 @@ export async function getPlanStatus(orgId, userId) {
 
   return {
     planName: plan?.name || null,
+    planDisplayName: plan?.display_name || plan?.name || null,
     priceMonthly: plan?.price_monthly ?? null,
     maxInvoices: plan?.max_invoices ?? null,
     maxEmployees: plan?.max_employees ?? null,

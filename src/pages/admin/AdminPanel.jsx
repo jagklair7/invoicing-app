@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../app/supabaseClient'
 import { useOrg } from '../../context/OrgContext'
 import { useNavigate } from 'react-router-dom'
+import CustomPlanEditor from '../../components/CustomPlanEditor'
 
 const css = `
 .admin-wrap {
@@ -357,6 +358,7 @@ const css = `
   white-space: nowrap;
 }
 .admin-status-pill--none { background: #fef2f2; color: #ef4444; }
+.admin-status-pill--custom { background: #d1faf8; color: #0d7377; }
 `
 
 const PLAN_FEATURES = [
@@ -367,6 +369,9 @@ const PLAN_FEATURES = [
   { key: 'multi_org', label: 'Multi-org' },
 ]
 
+const fmtDate = (d) =>
+  new Date(d).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
+
 export default function AdminPanel() {
   const { isSuperAdmin } = useOrg()
   const navigate = useNavigate()
@@ -376,10 +381,12 @@ export default function AdminPanel() {
   const [flags, setFlags]   = useState([])
   const [saving, setSaving] = useState(null) // flag key being saved
 
-  // Plans and plan-based feature control
+  // Plans and plan-based feature control (standard plans only; custom plans are kept separately)
   const [plans, setPlans] = useState([])
+  const [customPlans, setCustomPlans] = useState([])
   const [planSaving, setPlanSaving] = useState(null)
   const [selectedPlanId, setSelectedPlanId] = useState(null)
+  const [editingOrgId, setEditingOrgId] = useState(null) // org whose custom plan is open in the editor
 
   // Per-org overrides
   const [orgs, setOrgs]           = useState([])
@@ -435,7 +442,10 @@ export default function AdminPanel() {
       .from('plans')
       .select('*')
       .order('price_monthly', { ascending: true })
-    setPlans(data || [])
+    const all = data || []
+    // Super admins can read every plan row, so split custom ones out here.
+    setPlans(all.filter(p => !p.is_custom))
+    setCustomPlans(all.filter(p => p.is_custom))
   }
 
   async function fetchOrgAccounts() {
@@ -451,7 +461,7 @@ export default function AdminPanel() {
 
     const { data: allSubs } = await supabase
       .from('org_subscriptions')
-      .select('org_id, plan_id, status, plans(id, name, price_monthly)')
+      .select('org_id, plan_id, status, current_period_end, plans(id, name, display_name, is_custom, price_monthly)')
 
     const profileMap = new Map((allProfiles || []).map(p => [p.id, p]))
     const subMap = new Map((allSubs || []).map(s => [s.org_id, s]))
@@ -529,6 +539,8 @@ export default function AdminPanel() {
   }
 
   const selectedPlan = plans.find(plan => plan.id === selectedPlanId) || plans[0] || null
+  const customOrgIds = new Set(customPlans.map(p => p.custom_for_org_id))
+  const orgNameById = new Map(orgs.map(o => [o.id, o.name]))
 
   async function togglePlanFeature(plan, featureKey) {
     setPlanSaving(`${plan.id}:${featureKey}`)
@@ -689,65 +701,85 @@ export default function AdminPanel() {
               {!accountsLoading && orgAccounts.length === 0 && (
                 <div className="admin-empty">No organizations found.</div>
               )}
-              {!accountsLoading && orgAccounts.map(org => (
-                <div key={org.id} className="admin-user-row">
-                  <div className="admin-user-info">
-                    <div className="admin-user-org-name">{org.name}</div>
-                    <div className="admin-user-email">
-                      {org.owner?.email || org.owner?.full_name || '— no owner profile —'}
+              {!accountsLoading && orgAccounts.map(org => {
+                const subPlan = org.subscription?.plans
+                const onCustom = !!subPlan?.is_custom
+                return (
+                  <div key={org.id} className="admin-user-row">
+                    <div className="admin-user-info">
+                      <div className="admin-user-org-name">{org.name}</div>
+                      <div className="admin-user-email">
+                        {org.owner?.email || org.owner?.full_name || '— no owner profile —'}
+                      </div>
+                      <div className="admin-user-date">
+                        Joined {fmtDate(org.created_at)}
+                        {onCustom && org.subscription?.current_period_end &&
+                          ` · Renews ${fmtDate(org.subscription.current_period_end)}`}
+                      </div>
                     </div>
-                    <div className="admin-user-date">
-                      Joined {new Date(org.created_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}
-                    </div>
+
+                    {org.subscription ? (
+                      <span className={`admin-status-pill${org.subscription.status === 'suspended' ? ' admin-status-pill--none' : ''}`}>
+                        {org.subscription.status}
+                      </span>
+                    ) : (
+                      <span className="admin-status-pill admin-status-pill--none">No plan</span>
+                    )}
+
+                    {onCustom && <span className="admin-status-pill admin-status-pill--custom">Custom</span>}
+
+                    <select
+                      className="admin-plan-select"
+                      value={org.subscription?.plan_id || ''}
+                      onChange={e => changeOrgPlan(org.id, e.target.value)}
+                      disabled={planChangeSaving === org.id}
+                    >
+                      <option value="" disabled>Select plan…</option>
+                      {onCustom && (
+                        <option value={org.subscription.plan_id}>
+                          {(subPlan.display_name || subPlan.name)} — ${subPlan.price_monthly}/mo
+                        </option>
+                      )}
+                      {plans.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name.charAt(0).toUpperCase() + p.name.slice(1)} — ${p.price_monthly}/mo
+                        </option>
+                      ))}
+                    </select>
+
+                    {planChangeSaving === org.id && <span className="admin-saving">Saving…</span>}
+
+                    <button
+                      className="admin-button"
+                      onClick={() => setEditingOrgId(org.id)}
+                    >
+                      {customOrgIds.has(org.id) ? 'Edit custom plan' : 'Custom plan'}
+                    </button>
+
+                    <button
+                      className="admin-button"
+                      onClick={() => toggleSuspend(org)}
+                      disabled={suspendSaving === org.id || !org.subscription}
+                      title={!org.subscription ? 'Assign a plan first' : ''}
+                    >
+                      {suspendSaving === org.id
+                        ? 'Saving…'
+                        : org.subscription?.status === 'suspended'
+                          ? 'Reactivate'
+                          : 'Suspend'}
+                    </button>
+
+                    <button
+                      className="admin-button"
+                      style={{ color: '#ef4444', borderColor: '#fecaca' }}
+                      onClick={() => handleAdminDeleteOrg(org)}
+                      disabled={deletingOrgId === org.id}
+                    >
+                      {deletingOrgId === org.id ? 'Deleting…' : 'Delete'}
+                    </button>
                   </div>
-
-                  {org.subscription ? (
-                    <span className={`admin-status-pill${org.subscription.status === 'suspended' ? ' admin-status-pill--none' : ''}`}>
-                      {org.subscription.status}
-                    </span>
-                  ) : (
-                    <span className="admin-status-pill admin-status-pill--none">No plan</span>
-                  )}
-
-                  <select
-                    className="admin-plan-select"
-                    value={org.subscription?.plan_id || ''}
-                    onChange={e => changeOrgPlan(org.id, e.target.value)}
-                    disabled={planChangeSaving === org.id}
-                  >
-                    <option value="" disabled>Select plan…</option>
-                    {plans.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name.charAt(0).toUpperCase() + p.name.slice(1)} — ${p.price_monthly}/mo
-                      </option>
-                    ))}
-                  </select>
-
-                  {planChangeSaving === org.id && <span className="admin-saving">Saving…</span>}
-
-                  <button
-                    className="admin-button"
-                    onClick={() => toggleSuspend(org)}
-                    disabled={suspendSaving === org.id || !org.subscription}
-                    title={!org.subscription ? 'Assign a plan first' : ''}
-                  >
-                    {suspendSaving === org.id
-                      ? 'Saving…'
-                      : org.subscription?.status === 'suspended'
-                        ? 'Reactivate'
-                        : 'Suspend'}
-                  </button>
-
-                  <button
-                    className="admin-button"
-                    style={{ color: '#ef4444', borderColor: '#fecaca' }}
-                    onClick={() => handleAdminDeleteOrg(org)}
-                    disabled={deletingOrgId === org.id}
-                  >
-                    {deletingOrgId === org.id ? 'Deleting…' : 'Delete'}
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}
@@ -819,6 +851,36 @@ export default function AdminPanel() {
                 </>
               )}
             </div>
+
+            <div className="admin-section-title">Custom Plans</div>
+            <div className="admin-card">
+              {customPlans.length === 0 && (
+                <div className="admin-empty">
+                  No custom plans yet. Create one from the Users & Plans tab.
+                </div>
+              )}
+              {customPlans.map(p => (
+                <div key={p.id} className="admin-user-row">
+                  <div className="admin-user-info">
+                    <div className="admin-user-org-name">{p.display_name || p.name}</div>
+                    <div className="admin-user-email">
+                      {orgNameById.get(p.custom_for_org_id) || p.custom_for_org_id}
+                    </div>
+                    <div className="admin-user-date">
+                      ${p.price_monthly}/mo · {p.max_employees === -1 ? 'Unlimited' : p.max_employees} employees ·{' '}
+                      {p.max_invoices === -1 ? 'Unlimited' : p.max_invoices} invoices ·{' '}
+                      {p.max_orgs === -1 ? 'Unlimited' : p.max_orgs} orgs
+                    </div>
+                  </div>
+                  <button
+                    className="admin-button"
+                    onClick={() => setEditingOrgId(p.custom_for_org_id)}
+                  >
+                    Edit
+                  </button>
+                </div>
+              ))}
+            </div>
           </>
         )}
 
@@ -881,6 +943,14 @@ export default function AdminPanel() {
         )}
 
       </div>
+
+      {editingOrgId && (
+        <CustomPlanEditor
+          orgId={editingOrgId}
+          onClose={() => setEditingOrgId(null)}
+          onSaved={() => { fetchPlans(); fetchOrgAccounts() }}
+        />
+      )}
     </>
   )
 }
