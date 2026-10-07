@@ -305,7 +305,6 @@ const css = `
     padding: 6px 16px;
     font-size: 13px;
     font-weight: 700;
-    text-transform: capitalize;
   }
   .plan-price {
     font-size: 13px;
@@ -380,6 +379,13 @@ function UsageStat({ label, used, max }) {
       )}
     </div>
   )
+}
+
+// Standard plans have no display name (planDisplayName === planName, e.g. "pro") -> capitalize.
+// Custom plans carry a proper display name -> show it exactly as written.
+function planLabel(status) {
+  const name = status.planDisplayName || status.planName || 'Unknown'
+  return name === status.planName ? name.charAt(0).toUpperCase() + name.slice(1) : name
 }
 
 export default function Settings() {
@@ -541,6 +547,8 @@ export default function Settings() {
     <div style={{ padding: 40, color: '#94a3b8', fontSize: 13 }}>Loading settings…</div>
   )
 
+  const isCustomPlan = !!planStatus?.planName?.startsWith('custom-')
+
   return (
     <>
       <style>{css}</style>
@@ -555,7 +563,7 @@ export default function Settings() {
         {planStatus && (
           <div className="settings-card">
             <div className="plan-card-header">
-              <span className="plan-name-badge">{planStatus.planName || 'Unknown'}</span>
+              <span className="plan-name-badge">{planLabel(planStatus)}</span>
               <span className="plan-price">
                 {planStatus.priceMonthly === 0 ? 'Free' : planStatus.priceMonthly != null ? `$${planStatus.priceMonthly}/mo` : ''}
               </span>
@@ -577,7 +585,11 @@ export default function Settings() {
                 max={planStatus.maxOrgs}
               />
             </div>
-            {planStatus.planName !== 'enterprise' && (
+            {isCustomPlan ? (
+              <a href="mailto:info@klair.ca?subject=Question%20about%20my%20plan" className="plan-upgrade-link">
+                Contact us about your plan →
+              </a>
+            ) : planStatus.planName !== 'enterprise' && (
               <a href="mailto:info@klair.ca?subject=Upgrade%20my%20plan" className="plan-upgrade-link">
                 Upgrade your plan →
               </a>
