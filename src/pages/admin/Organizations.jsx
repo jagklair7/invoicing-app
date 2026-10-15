@@ -346,8 +346,9 @@ export default function Organizations() {
     setLoading(true)
     const [{ data: orgData }, { data: planData }, { data: subscriptionData }] = await Promise.all([
       supabase.from('organizations').select('id, name, owner_id, created_at').order('created_at', { ascending: false }),
-      supabase.from('plans').select('id, name, price_monthly, features').order('price_monthly', { ascending: true }),
-      supabase.from('org_subscriptions').select('org_id, plan_id, status, plan:plan_id(name, price_monthly, features)')
+      // max_employees / max_invoices are required by formatPlanSummary() below
+      supabase.from('plans').select('id, name, price_monthly, max_employees, max_invoices, features').order('price_monthly', { ascending: true }),
+      supabase.from('org_subscriptions').select('org_id, plan_id, status, plan:plan_id(name, price_monthly, max_employees, max_invoices, features)')
     ])
 
     setOrgs(orgData || [])
