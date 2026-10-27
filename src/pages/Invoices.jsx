@@ -5,6 +5,7 @@ import { supabase } from '../app/supabaseClient'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../context/OrgContext'
 import { exportInvoicePDF } from '../utils/exportInvoicePDF'
+import { hasAdjustment, getEffectiveTotal } from '../utils/invoiceAdjustment'
 import SuspendedBanner from '../components/SuspendedBanner'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -16,6 +17,12 @@ function fmtDate(d) {
 }
 const fmt = (n) =>
   new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
+
+// What the customer actually owes: invoices.adjusted_total (tax-inclusive,
+// negotiated) when set, else the stored invoices.total. Used everywhere this
+// page shows or compares an invoice amount.
+const effTotal = (inv) => Number(getEffectiveTotal(inv, Number(inv?.total) || 0)) || 0
+const isAdjusted = (inv) => hasAdjustment(inv, Number(inv?.total) || 0)
 
 function statusColor(status) {
   switch (status) {
@@ -402,8 +409,11 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
 
   const parseAmount = v => parseFloat(String(v || 0).replace(/[^0-9.]/g, '')) || 0
 
+  // Balance is measured against the EFFECTIVE total (adjusted total when one
+  // is set), not the original invoices.total.
+  const invoiceTotal = effTotal(inv)
   const totalPaid   = history.reduce((s, p) => s + parseAmount(p.amount), 0)
-  const balance     = parseAmount(inv.total) - totalPaid
+  const balance     = invoiceTotal - totalPaid
   const isFullyPaid  = balance <= 0.005
 
   useEffect(() => { fetchHistory() }, [])
@@ -433,7 +443,7 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
       })
 
       const newPaid = totalPaid + parseAmount(amount)
-      const newStatus = newPaid >= parseAmount(inv.total) - 0.005 ? 'paid' : 'partial'
+      const newStatus = newPaid >= invoiceTotal - 0.005 ? 'paid' : 'partial'
       await supabase.from('invoices')
         .update({ status: newStatus })
         .eq('id', inv.id).eq('org_id', orgId)
@@ -463,6 +473,12 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
             </span>
             <span className="balance-strip-amount">{fmt(Math.max(balance, 0))}</span>
           </div>
+
+          {isAdjusted(inv) && (
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: -6 }}>
+              Adjusted total {fmt(invoiceTotal)} (original {fmt(inv.total)})
+            </div>
+          )}
 
           {!loadingH && history.length > 0 && (
             <div>
@@ -578,7 +594,7 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
             <p style="font-size:15px;margin:0 0 14px;">Hi ${customer?.name || 'there'},</p>
             <p style="font-size:14px;color:#475569;margin:0 0 16px;">
               This is a friendly reminder that invoice <strong>${inv.number}</strong> 
-              for <strong>${fmt(inv.total)}</strong> 
+              for <strong>${fmt(effTotal(inv))}</strong> 
               ${inv.due_date ? `was due on <strong>${fmtDate(inv.due_date)}</strong>` : 'is outstanding'} 
               and remains unpaid.
             </p>
@@ -650,7 +666,7 @@ function ReminderModal({ inv, customer, orgSettings, activeOrg, onClose }) {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#94a3b8' }}>Amount Due</span>
-                  <span style={{ fontWeight: 700, color: '#0d7377' }}>{fmt(inv.total)}</span>
+                  <span style={{ fontWeight: 700, color: '#0d7377' }}>{fmt(effTotal(inv))}</span>
                 </div>
                 {inv.due_date && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -737,7 +753,7 @@ function ResendModal({ inv, customer, orgSettings, activeOrg, onClose }) {
             <p>Hi ${customer?.name || 'there'},</p>
             <p style="color:#475569;">
               Please find your invoice <strong>${inv.number}</strong> 
-              for <strong>${fmt(inv.total)}</strong>
+              for <strong>${fmt(effTotal(inv))}</strong>
               ${inv.due_date ? `, due ${fmtDate(inv.due_date)}` : ''}.
             </p>
             <p style="color:#475569;">Please get in touch if you have any questions.</p>
@@ -842,7 +858,12 @@ function InvoiceCardMobile({ inv, onOpen, onAction, isSuspended }) {
             <span>Issued {fmtDate(inv.date)}</span>
           )}
         </div>
-        <div className="inv-card-mobile-total">{fmt(inv.total || 0)}</div>
+        <div style={{ textAlign: 'right' }}>
+          {isAdjusted(inv) && (
+            <div style={{ fontSize: 11, color: '#94a3b8', textDecoration: 'line-through' }}>{fmt(inv.total || 0)}</div>
+          )}
+          <div className="inv-card-mobile-total">{fmt(effTotal(inv))}</div>
+        </div>
       </div>
     </div>
   )
@@ -959,6 +980,8 @@ export default function Invoices() {
     }
   }
 
+  // NOTE: adjusted_total / adjustment_reason are deliberately NOT copied —
+  // an adjustment belongs to the one invoice it was negotiated for.
   async function duplicateInvoice(inv) {
     const { data: last } = await supabase
       .from('invoices').select('number').eq('org_id', activeOrg.orgId)
@@ -997,7 +1020,7 @@ export default function Invoices() {
   }
 
   const isUnpaidInvoice = (inv) => {
-    const hasPayment = Number(inv.total || 0) > 0 && (inv.status === 'sent' || inv.status === 'partial' || inv.status === 'draft')
+    const hasPayment = effTotal(inv) > 0 && (inv.status === 'sent' || inv.status === 'partial' || inv.status === 'draft')
     return hasPayment && (inv.status !== 'paid' && inv.status !== 'void')
   }
 
@@ -1118,7 +1141,12 @@ export default function Invoices() {
                       </span>
                     </td>
                     <td className="p-3 text-right font-medium text-gray-900">
-                      {fmt(inv.total || 0)}
+                      {isAdjusted(inv) && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', textDecoration: 'line-through', fontWeight: 400 }}>
+                          {fmt(inv.total || 0)}
+                        </div>
+                      )}
+                      {fmt(effTotal(inv))}
                     </td>
                     <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
                       <ActionMenu inv={inv} onAction={handleAction} isSuspended={isSuspended} />
