@@ -10,6 +10,13 @@
 // card processing which sets invoices.paid_at directly — never both).
 // So cash-basis revenue is the union of both with no dedup needed.
 //
+// ADJUSTED TOTALS: invoices.adjusted_total (tax-inclusive, nullable) is a
+// negotiated amount that replaces invoices.total when present. `total` in the
+// response is now the EFFECTIVE total (adjusted_total ?? total), so revenue
+// and aging match what the customer actually owes/paid. The untouched
+// original is returned as `original_total`, and `is_adjusted` flags rows
+// where the two differ.
+//
 // AUTH: single shared secret via `Authorization: Bearer {key}`, checked
 // against process.env.DASHBOARD_API_KEY. This is fine while it's only your
 // own company's data flowing through it. If you start building dashboards
@@ -45,6 +52,13 @@ const supabaseAdmin = createClient(
 // so they carry no payment risk; Void invoices are cancelled.
 const OVERDUE_ELIGIBLE_STATUSES = ['sent']
 
+// Effective total = the negotiated adjusted_total when set, else the stored total.
+function effectiveTotal(inv) {
+  return inv.adjusted_total !== null && inv.adjusted_total !== undefined
+    ? inv.adjusted_total
+    : inv.total
+}
+
 export default async function handler(req, res) {
   const allowedOrigin = process.env.DASHBOARD_ALLOWED_ORIGIN || '*'
   res.setHeader('Access-Control-Allow-Origin', allowedOrigin)
@@ -72,7 +86,7 @@ export default async function handler(req, res) {
 
   const { data: invoices, error: invoicesError } = await supabaseAdmin
     .from('invoices')
-    .select('date, due_date, total, status, number, customer_id, paid_at, customers(name)')
+    .select('date, due_date, total, adjusted_total, status, number, customer_id, paid_at, customers(name)')
     .eq('org_id', org_id)
     .order('date', { ascending: true })
 
@@ -108,10 +122,14 @@ export default async function handler(req, res) {
       else aging_bucket = '90+'
     }
 
+    const eff = effectiveTotal(inv)
+
     return {
       date: inv.date,
       due_date: inv.due_date,
-      total: inv.total,
+      total: eff,
+      original_total: inv.total,
+      is_adjusted: Math.abs(Number(eff) - Number(inv.total)) > 0.005,
       status: inv.status,
       number: inv.number,
       customer_id: inv.customer_id,
@@ -122,13 +140,13 @@ export default async function handler(req, res) {
   })
 
   // Card payments (Helcim): invoices.paid_at set directly, no
-  // invoice_payments row. amount = the invoice's total, since Helcim
-  // processes the full invoice amount (no partial-payment path via card
-  // currently exists in this system).
+  // invoice_payments row. amount = the invoice's effective total, since
+  // Helcim processes the full invoice amount (no partial-payment path via
+  // card currently exists in this system).
   const cardPayments = (invoices || [])
     .filter(inv => inv.paid_at)
     .map(inv => ({
-      amount: inv.total,
+      amount: effectiveTotal(inv),
       paid_at: inv.paid_at.slice(0, 10),
       invoice_id: null,
     }))

@@ -15,6 +15,7 @@ import PaymentsSection from '../components/PaymentsSection'
 import SuspendedBanner from '../components/SuspendedBanner'
 import RichTextNotes, { sanitizeNotesHtml } from '../components/RichTextNotes'
 import { calcInvoiceTax, taxConfigFromInvoice } from '../utils/invoiceTax'
+import { hasAdjustment, getEffectiveTotal, adjustedTaxBreakdown } from '../utils/invoiceAdjustment'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
@@ -851,6 +852,10 @@ export default function InvoiceView() {
   const [editNotes, setEditNotes]   = useState('')
   const [products, setProducts]     = useState([])
 
+  // Adjusted total (tax-inclusive, negotiated). '' = no adjustment.
+  const [editAdjusted, setEditAdjusted]       = useState('')
+  const [editAdjReason, setEditAdjReason]     = useState('')
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function fetchInvoice(ignore = false) {
     if (!activeOrg?.orgId) return
@@ -899,6 +904,8 @@ export default function InvoiceView() {
       setEditDue(data.due_date || '')
       setEditItems(fetchedItems)
       setEditPO(data.po_number || '')
+      setEditAdjusted(data.adjusted_total != null ? String(data.adjusted_total) : '')
+      setEditAdjReason(data.adjustment_reason || '')
 
     } catch (err) {
       console.error(err)
@@ -1048,6 +1055,8 @@ export default function InvoiceView() {
     setEditNotes(invoice?.notes || '')
     setEditPO(invoice?.po_number || '')
     setOnlinePaymentEnabled(!!invoice?.online_payment_enabled)
+    setEditAdjusted(invoice?.adjusted_total != null ? String(invoice.adjusted_total) : '')
+    setEditAdjReason(invoice?.adjustment_reason || '')
   }
 
   // ── Live totals ────────────────────────────────────────────────────────────
@@ -1056,8 +1065,26 @@ export default function InvoiceView() {
   const editTax      = editTaxCalc.tax
   const editTotal    = editTaxCalc.total
 
+  // Live adjusted total in the edit form ('' / invalid = no adjustment).
+  const editAdjNum   = editAdjusted === '' ? null : Number(editAdjusted)
+  const editHasAdj   = editAdjNum !== null && Number.isFinite(editAdjNum) && editAdjNum >= 0
+                       && Math.abs(editAdjNum - editTotal) > 0.005
+  const editAdjTax   = editHasAdj ? adjustedTaxBreakdown(editAdjNum, invoice) : null
+
   // ── Save ───────────────────────────────────────────────────────────────────
   async function saveChanges() {
+    // Validate the adjusted total before touching the database.
+    let adjustedToSave = null
+    if (String(editAdjusted).trim() !== '') {
+      const n = Number(editAdjusted)
+      if (!Number.isFinite(n) || n < 0) {
+        alert('Adjusted total must be a number of 0 or more (or leave it blank for no adjustment).')
+        return
+      }
+      // Same as the calculated total = no adjustment, store NULL.
+      if (Math.abs(n - editTotal) > 0.005) adjustedToSave = Math.round(n * 100) / 100
+    }
+
     setSaving(true)
     try {
       const { error: invErr } = await supabase
@@ -1073,6 +1100,8 @@ export default function InvoiceView() {
           notes:    editNotes,
           po_number: editPO,
           online_payment_enabled: onlinePaymentEnabled,
+          adjusted_total:    adjustedToSave,
+          adjustment_reason: adjustedToSave === null ? null : (editAdjReason.trim() || null),
         })
         .eq('id', id)
         .eq('org_id', activeOrg.orgId)
@@ -1122,6 +1151,8 @@ export default function InvoiceView() {
 }
 
   // ── Duplicate ──────────────────────────────────────────────────────────────
+  // NOTE: adjusted_total / adjustment_reason are deliberately NOT copied —
+  // an adjustment belongs to the one invoice it was negotiated for.
   async function duplicateInvoice() {
     const { allowed, reason } = await checkCanCreateInvoice(activeOrg.orgId)
   if (!allowed) {
@@ -1227,6 +1258,13 @@ export default function InvoiceView() {
   const taxCalc  = calcInvoiceTax(subtotal, taxConfigFromInvoice(invoice))
   const tax      = taxCalc.tax
   const total    = taxCalc.total
+
+  // Adjusted total (negotiated, tax-inclusive). effectiveTotal is what the
+  // customer actually owes and what payments / card charges are measured
+  // against. `total` stays the original calculated amount.
+  const adjusted       = hasAdjustment(invoice, total)
+  const effectiveTotal = getEffectiveTotal(invoice, total)
+  const adjTax         = adjusted ? adjustedTaxBreakdown(effectiveTotal, invoice) : null
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) return (
@@ -1478,10 +1516,44 @@ export default function InvoiceView() {
                     </div>
                   ))}
                   <div className="inv-total-divider" />
-                  <div className="inv-total-row inv-total-row--grand">
-                    <span className="inv-total-label">Total Due</span>
-                    <span className="inv-total-value">{fmt(total)}</span>
-                  </div>
+
+                  {adjusted ? (
+                    <>
+                      <div className="inv-total-row">
+                        <span className="inv-total-label">Total</span>
+                        <span className="inv-total-value" style={{ textDecoration: 'line-through', color: '#94a3b8' }}>
+                          {fmt(total)}
+                        </span>
+                      </div>
+                      <div className="inv-total-row">
+                        <span className="inv-total-label">Adjustment</span>
+                        <span className="inv-total-value" style={{ color: '#059669' }}>
+                          −{fmt(total - effectiveTotal)}
+                        </span>
+                      </div>
+                      {adjTax.lines.map(line => (
+                        <div className="inv-total-row" key={`adj-${line.label}`}>
+                          <span className="inv-total-label" style={{ fontSize: 11 }}>Incl. {line.label}</span>
+                          <span className="inv-total-value" style={{ fontSize: 12, color: '#94a3b8' }}>{fmt(line.amount)}</span>
+                        </div>
+                      ))}
+                      <div className="inv-total-divider" />
+                      <div className="inv-total-row inv-total-row--grand">
+                        <span className="inv-total-label">Adjusted Total Due</span>
+                        <span className="inv-total-value">{fmt(effectiveTotal)}</span>
+                      </div>
+                      {invoice?.adjustment_reason && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2, textAlign: 'right', maxWidth: 320 }}>
+                          {invoice.adjustment_reason}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="inv-total-row inv-total-row--grand">
+                      <span className="inv-total-label">Total Due</span>
+                      <span className="inv-total-value">{fmt(total)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {invoice?.notes && (
@@ -1525,7 +1597,7 @@ export default function InvoiceView() {
                 </div>
                 <PaymentsSection
                         invoiceId={id}
-                        invoiceTotal={total}
+                        invoiceTotal={effectiveTotal}
                         orgId={activeOrg.orgId}
                         invoice={invoice}
                         customer={customer}
@@ -1575,6 +1647,27 @@ export default function InvoiceView() {
                         />
                         Show Pay Now link
                       </label>
+                    </div>
+                    <div className="inv-field">
+                      <label className="inv-field-label">Adjusted Total (tax incl.)</label>
+                      <input
+                        className="inv-input"
+                        type="number" min="0" step="0.01"
+                        placeholder={`${editTotal.toFixed(2)} (no adjustment)`}
+                        value={editAdjusted}
+                        onChange={e => setEditAdjusted(e.target.value)}
+                      />
+                    </div>
+                    <div className="inv-field">
+                      <label className="inv-field-label">Adjustment Reason</label>
+                      <input
+                        className="inv-input"
+                        type="text"
+                        placeholder="e.g. Customer-negotiated"
+                        value={editAdjReason}
+                        onChange={e => setEditAdjReason(e.target.value)}
+                        disabled={!editHasAdj}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1705,8 +1798,31 @@ export default function InvoiceView() {
                   <div className="inv-total-divider" />
                   <div className="inv-total-row inv-total-row--grand">
                     <span className="inv-total-label">Total</span>
-                    <span className="inv-total-value">{fmt(editTotal)}</span>
+                    <span className="inv-total-value"
+                      style={editHasAdj ? { textDecoration: 'line-through', color: '#94a3b8', fontSize: 18 } : undefined}>
+                      {fmt(editTotal)}
+                    </span>
                   </div>
+                  {editHasAdj && (
+                    <>
+                      <div className="inv-total-row">
+                        <span className="inv-total-label">Adjustment</span>
+                        <span className="inv-total-value" style={{ color: '#059669' }}>
+                          −{fmt(editTotal - editAdjNum)}
+                        </span>
+                      </div>
+                      {editAdjTax.lines.map(line => (
+                        <div className="inv-total-row" key={`edit-adj-${line.label}`}>
+                          <span className="inv-total-label" style={{ fontSize: 11 }}>Incl. {line.label}</span>
+                          <span className="inv-total-value" style={{ fontSize: 12, color: '#94a3b8' }}>{fmt(line.amount)}</span>
+                        </div>
+                      ))}
+                      <div className="inv-total-row inv-total-row--grand">
+                        <span className="inv-total-label">Adjusted Total</span>
+                        <span className="inv-total-value">{fmt(editAdjNum)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 20 }}>
@@ -1766,7 +1882,7 @@ export default function InvoiceView() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ color: '#94a3b8' }}>Amount</span>
-                      <span style={{ fontWeight: 700, color: '#0d7377' }}>{fmt(invoice.total)}</span>
+                      <span style={{ fontWeight: 700, color: '#0d7377' }}>{fmt(effectiveTotal)}</span>
                     </div>
                     {invoice.due_date && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1850,7 +1966,7 @@ export default function InvoiceView() {
               }}>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0d7377' }}>Amount to charge</div>
-                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 600, color: '#1e293b', marginTop: 2 }}>{fmt(total)}</div>
+                  <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 600, color: '#1e293b', marginTop: 2 }}>{fmt(effectiveTotal)}</div>
                   {invoice?.due_date && (
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>Due {fmtDate(invoice.due_date)}</div>
                   )}
@@ -1873,7 +1989,7 @@ export default function InvoiceView() {
                 Cancel
               </button>
               <PayNowButton
-                invoice={{ ...invoice, total }}
+                invoice={{ ...invoice, total: effectiveTotal }}
                 customerCode={orgSettings?.helcim_customer_code ?? undefined}
                 onPaid={(updatedInvoice) => {
                   setInvoice(updatedInvoice)

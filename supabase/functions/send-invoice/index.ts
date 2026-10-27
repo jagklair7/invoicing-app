@@ -34,6 +34,13 @@
 // would let a caller inject an arbitrary link into the email/PDF. When
 // eligible, the link is drawn into the PDF as a small button right under
 // the totals block, and rendered as a "Pay Now" button in the email body.
+//
+// ADJUSTED TOTAL (new): invoices.adjusted_total (tax-inclusive, nullable) is a
+// negotiated amount that replaces the calculated total. When it differs from
+// the calculated total, the PDF totals block shows Total → Adjustment →
+// (tax included) → Adjusted Total, balance due / "Paid in Full" is measured
+// against the adjusted total, and the email + Pay Now button show the
+// adjusted amount. Mirrors src/utils/invoiceAdjustment.js — keep in sync by hand.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { encode as base64Encode } from 'https://deno.land/std@0.168.0/encoding/base64.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -108,6 +115,52 @@ function calcInvoiceTax(subtotal: number, cfg: any) {
   }
   tax = round2(tax)
   return { lines, tax, total: round2(sub + tax) }
+}
+
+// ── Adjusted total — MIRROR of src/utils/invoiceAdjustment.js ───────────────
+// invoices.adjusted_total is tax-INCLUSIVE. It only counts when it exists and
+// differs from the calculated total.
+function getAdjustedTotal(invoice: any): number | null {
+  const a = invoice?.adjusted_total
+  if (a === null || a === undefined || a === '') return null
+  const n = Number(a)
+  return Number.isFinite(n) ? round2(n) : null
+}
+
+function hasAdjustment(invoice: any, calculatedTotal: number): boolean {
+  const a = getAdjustedTotal(invoice)
+  return a !== null && Math.abs(a - Number(calculatedTotal || 0)) > 0.005
+}
+
+function getEffectiveTotal(invoice: any, calculatedTotal: number): number {
+  return hasAdjustment(invoice, calculatedTotal)
+    ? (getAdjustedTotal(invoice) as number)
+    : calculatedTotal
+}
+
+// Back out the tax included in the adjusted total using the invoice's own tax
+// config (legacy invoices with no tax_pct = 5% GST). Lines always sum to tax.
+function adjustedTaxBreakdown(adjustedTotal: number, invoice: any) {
+  const cfg = taxConfigFromInvoice(invoice)
+  const rates: { label: string; pct: number }[] = cfg
+    ? [{ label: `${cfg.name} (${fmtPct(cfg.pct)}%)`, pct: Number(cfg.pct) || 0 }]
+    : [{ label: 'Tax (5%)', pct: 5 }]
+  if (cfg && cfg.name2 && Number(cfg.pct2) > 0) {
+    rates.push({ label: `${cfg.name2} (${fmtPct(cfg.pct2)}%)`, pct: Number(cfg.pct2) })
+  }
+
+  const totalPct = rates.reduce((s, r) => s + r.pct, 0)
+  const total = round2(adjustedTotal)
+  const tax = totalPct > 0 ? round2(total * totalPct / (100 + totalPct)) : 0
+
+  const lines = rates.map(r => ({
+    label: r.label,
+    amount: totalPct > 0 ? round2(total * r.pct / (100 + totalPct)) : 0,
+  }))
+  const diff = round2(tax - lines.reduce((s, l) => s + l.amount, 0))
+  if (lines.length && diff !== 0) lines[lines.length - 1].amount = round2(lines[lines.length - 1].amount + diff)
+
+  return { subtotal: round2(total - tax), tax, lines }
 }
 
 // ── Discount math ────────────────────────────────────────────────────────────
@@ -541,8 +594,13 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
   const tax      = taxCalc.tax
   const total    = taxCalc.total
 
+  // Adjusted total (tax-inclusive, negotiated). effTotal is what the customer
+  // actually owes; balance due / "Paid in Full" are measured against it.
+  const hasAdj   = hasAdjustment(invoice, total)
+  const effTotal = getEffectiveTotal(invoice, total)
+
   const totalPaid  = payments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0)
-  const balanceDue = total - totalPaid
+  const balanceDue = effTotal - totalPaid
   const fullyPaid  = totalPaid > 0 && balanceDue <= 0.005
 
   const totRows: [string, string, boolean, boolean][] = [
@@ -550,8 +608,16 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
     ...taxCalc.lines.map((l: any): [string, string, boolean, boolean] => [l.label, fmt(l.amount), false, false]),
   ]
 
-  if (totalPaid > 0) {
+  if (hasAdj) {
     totRows.push(['Total', fmt(total), false, false])
+    totRows.push(['Adjustment', `-${fmt(total - effTotal)}`, false, true])
+    adjustedTaxBreakdown(effTotal, invoice).lines.forEach(l => {
+      totRows.push([`Incl. ${l.label}`, fmt(l.amount), false, false])
+    })
+  }
+
+  if (totalPaid > 0) {
+    totRows.push([hasAdj ? 'Adjusted Total' : 'Total', fmt(effTotal), false, false])
     totRows.push(['Amount Paid', `-${fmt(totalPaid)}`, false, true])
     totRows.push([
       fullyPaid ? 'Paid in Full' : 'Balance Due',
@@ -560,7 +626,7 @@ async function drawInvoicePage(doc: any, invoice: any, customer: any, data: any,
       fullyPaid,
     ])
   } else {
-    totRows.push(['Total Due', fmt(total), true, false])
+    totRows.push([hasAdj ? 'Adjusted Total Due' : 'Total Due', fmt(effTotal), true, false])
   }
 
   const labelX = pw - mr - 70
@@ -768,6 +834,7 @@ async function fetchInvoiceFull(admin: any, invoiceId: string, orgId: string) {
 // isReminder=true swaps the header badge/subtitle and intro paragraph to
 // overdue-reminder framing; the summary box, notes, sendNote, Pay Now
 // button and footer are all unchanged either way.
+// `total` here is the EFFECTIVE total (adjusted total when one exists).
 function buildEmailHtml(invoice: any, customer: any, COMPANY: any, sendNote: string, total: number, payUrl: string | null, isReminder = false) {
   const daysOverdue = isReminder && invoice.due_date
     ? Math.max(0, Math.floor((Date.now() - new Date(invoice.due_date + 'T00:00:00').getTime()) / 86400000))
@@ -883,6 +950,10 @@ serve(async (req) => {
       const tax      = taxCalc.tax
       const total    = taxCalc.total
 
+      // What the customer actually owes (adjusted total when one exists).
+      // Used for the email summary + Pay Now button.
+      const effTotal = getEffectiveTotal(invoice, total)
+
       // Computed from the invoice row itself — see computePayUrl's comment
       // for why any includePayNow/payUrl fields in the request body are
       // deliberately ignored here.
@@ -898,7 +969,7 @@ serve(async (req) => {
       subject = body.subject || (isReminder
         ? `Payment Reminder: Invoice ${invoice.number} is overdue`
         : `Invoice ${invoice.number} from ${COMPANY.name || body.companyName || DEFAULT_SENDER_NAME}`)
-      html        = buildEmailHtml(invoice, customer, COMPANY, body.sendNote || '', total, payUrl, isReminder)
+      html        = buildEmailHtml(invoice, customer, COMPANY, body.sendNote || '', effTotal, payUrl, isReminder)
       companyName = COMPANY.name || body.companyName
       orgId       = body.orgId
 
