@@ -15,6 +15,13 @@
  * documented in src/pages/InvoicePublic.jsx and
  * supabase/functions/send-invoice/index.ts's computePayUrl().
  *
+ * ADJUSTED TOTAL: if invoices.adjusted_total (tax-inclusive, negotiated) is
+ * set, that is the amount charged, and taxAmount is the tax backed out of it
+ * using the invoice's own tax_pct/tax2_pct (NULL tax_pct = legacy 5% GST).
+ * It is read straight from the invoices row by public_token rather than from
+ * the get_invoice_by_token RPC, because that RPC's output shape hasn't been
+ * verified to include adjusted_total.
+ *
  * Called by the front-end with { token }
  * Returns { checkoutToken, secretToken } to the client, same shape as
  * /api/helcim-init.js.
@@ -30,6 +37,17 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+
+// Tax included in a tax-inclusive total. Mirrors adjustedTaxBreakdown() in
+// src/utils/invoiceAdjustment.js (total tax only — Helcim just needs one figure).
+function taxIncludedIn(adjustedTotal, row) {
+  const pct1 = row?.tax_pct == null ? 5 : Number(row.tax_pct) || 0
+  const pct2 = row?.tax_pct == null ? 0 : (Number(row.tax2_pct) || 0)
+  const totalPct = pct1 + pct2
+  return totalPct > 0 ? round2(adjustedTotal * totalPct / (100 + totalPct)) : 0
+}
 
 export default async function handler(req, res) {
   try {
@@ -72,6 +90,25 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'This invoice is not payable' })
     }
 
+    // Authoritative amount fields straight from the invoices row (service
+    // role, keyed by the same public_token the RPC used).
+    const { data: amountRow, error: amountErr } = await supabaseAdmin
+      .from('invoices')
+      .select('total, tax, adjusted_total, tax_pct, tax2_pct')
+      .eq('public_token', token)
+      .single()
+
+    if (amountErr || !amountRow) {
+      console.error('public-invoice-pay: amount lookup failed', amountErr?.message)
+      return res.status(404).json({ error: 'Invoice not found' })
+    }
+
+    const hasAdjusted = amountRow.adjusted_total !== null && amountRow.adjusted_total !== undefined
+    const chargeAmount = hasAdjusted ? Number(amountRow.adjusted_total) : Number(amountRow.total)
+    const chargeTax = hasAdjusted
+      ? taxIncludedIn(chargeAmount, amountRow)
+      : (amountRow.tax != null ? Number(amountRow.tax) : null)
+
     const apiToken = process.env.HELCIM_API_TOKEN
     if (!apiToken) {
       console.error('HELCIM_API_TOKEN is not set in environment variables')
@@ -85,11 +122,11 @@ export default async function handler(req, res) {
     // public flow — see file header.
     const payload = {
       paymentType: 'purchase',
-      amount: Number(Number(invoice.total).toFixed(2)),
+      amount: Number(chargeAmount.toFixed(2)),
       currency: 'CAD',
     }
-    if (invoice.tax != null) {
-      payload.taxAmount = Number(Number(invoice.tax).toFixed(2))
+    if (chargeTax != null) {
+      payload.taxAmount = Number(Number(chargeTax).toFixed(2))
     }
 
     const helcimRes = await fetch('https://api.helcim.com/v2/helcim-pay/initialize', {

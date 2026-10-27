@@ -1087,11 +1087,27 @@ export default function InvoiceView() {
 
     setSaving(true)
     try {
+      // Status follows the money: PaymentsSection only re-syncs status when a
+      // payment is added/deleted, so saving a new adjusted total must do it
+      // too. Only ever PROMOTES to 'paid' (never demotes, never touches
+      // void/draft) when recorded payments already cover the effective total.
+      let statusToSave = editStatus
+      if (editStatus !== 'void' && editStatus !== 'draft' && editStatus !== 'paid') {
+        const { data: payRows } = await supabase
+          .from('invoice_payments')
+          .select('amount')
+          .eq('invoice_id', id)
+          .eq('org_id', activeOrg.orgId)
+        const paidSoFar = (payRows || []).reduce((s, p) => s + Number(p.amount || 0), 0)
+        const effective = adjustedToSave !== null ? adjustedToSave : editTotal
+        if (paidSoFar > 0 && effective - paidSoFar <= 0.005) statusToSave = 'paid'
+      }
+
       const { error: invErr } = await supabase
         .from('invoices')
         .update({
           number:   editNumber,
-          status:   editStatus,
+          status:   statusToSave,
           date:     editDate,
           due_date: editDue || null,
           subtotal: editSubtotal,

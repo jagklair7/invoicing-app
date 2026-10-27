@@ -6,8 +6,14 @@
 // Usage:    import { exportInvoicePDF, exportBatchInvoicesPDF } from '../utils/exportInvoicePDF'
 //           await exportInvoicePDF(invoice, customer, items, orgId)
 //           await exportBatchInvoicesPDF([{ invoice, customer }, ...], orgId, 'Ayre & Oxford')
+//
+// ADJUSTED TOTAL: when invoices.adjusted_total differs from the calculated
+// total, the totals block shows Total → Adjustment → included tax → Adjusted
+// Total, and Balance Due / "Paid in Full" are measured against the adjusted
+// total. Mirrors supabase/functions/send-invoice/index.ts.
 import { calcLineTotal, calcLineDiscount } from './discount'
 import { calcInvoiceTax, taxConfigFromInvoice } from './invoiceTax'
+import { hasAdjustment, getEffectiveTotal, adjustedTaxBreakdown } from './invoiceAdjustment'
 import { jsPDF } from 'jspdf'
 import { supabase } from '../app/supabaseClient' // Make sure this path is correct
 
@@ -542,8 +548,13 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
   const tax      = taxCalc.tax
   const total    = taxCalc.total
 
+  // Adjusted total (tax-inclusive, negotiated): effTotal is what the
+  // customer actually owes; balance / "Paid in Full" are measured against it.
+  const hasAdj   = hasAdjustment(invoice, total)
+  const effTotal = getEffectiveTotal(invoice, total)
+
   const totalPaid   = payments.reduce((s, p) => s + Number(p.amount || 0), 0)
-  const balanceDue  = total - totalPaid
+  const balanceDue  = effTotal - totalPaid
   const fullyPaid   = totalPaid > 0 && balanceDue <= 0.005
 
   // Row shape: [label, value, isGrand, isPaidGreen]
@@ -552,8 +563,16 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
     ...taxCalc.lines.map(l => [l.label, fmt(l.amount), false, false]),
   ]
 
-  if (totalPaid > 0) {
+  if (hasAdj) {
     totRows.push(['Total', fmt(total), false, false])
+    totRows.push(['Adjustment', `-${fmt(total - effTotal)}`, false, true])
+    adjustedTaxBreakdown(effTotal, invoice).lines.forEach(l => {
+      totRows.push([`Incl. ${l.label}`, fmt(l.amount), false, false])
+    })
+  }
+
+  if (totalPaid > 0) {
+    totRows.push([hasAdj ? 'Adjusted Total' : 'Total', fmt(effTotal), false, false])
     totRows.push(['Amount Paid', `-${fmt(totalPaid)}`, false, true])
     totRows.push([
       fullyPaid ? 'Paid in Full' : 'Balance Due',
@@ -562,7 +581,7 @@ async function drawInvoicePage(doc, invoice, customer, { items, payments, parent
       fullyPaid,
     ])
   } else {
-    totRows.push(['Total Due', fmt(total), true, false])
+    totRows.push([hasAdj ? 'Adjusted Total Due' : 'Total Due', fmt(effTotal), true, false])
   }
 
   const labelX = pw - mr - 70
