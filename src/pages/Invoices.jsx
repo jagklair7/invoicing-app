@@ -407,11 +407,19 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
   const [history, setHistory]   = useState([])
   const [loadingH, setLoadingH] = useState(true)
 
+  // "Accept as payment in full" — settles the invoice at the amount being
+  // paid by saving it as the invoice's adjusted_total (tax-inclusive).
+  const [settleAdjust, setSettleAdjust] = useState(false)
+  const [adjReason, setAdjReason]       = useState('Customer-negotiated adjustment')
+  // Local override of the adjusted total, so the modal stays correct after a
+  // save without waiting for the list to refetch (the `inv` prop is a snapshot).
+  const [localAdjusted, setLocalAdjusted] = useState(null)
+
   const parseAmount = v => parseFloat(String(v || 0).replace(/[^0-9.]/g, '')) || 0
 
   // Balance is measured against the EFFECTIVE total (adjusted total when one
   // is set), not the original invoices.total.
-  const invoiceTotal = effTotal(inv)
+  const invoiceTotal = localAdjusted !== null ? localAdjusted : effTotal(inv)
   const totalPaid   = history.reduce((s, p) => s + parseAmount(p.amount), 0)
   const balance     = invoiceTotal - totalPaid
   const isFullyPaid  = balance <= 0.005
@@ -443,14 +451,32 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
       })
 
       const newPaid = totalPaid + parseAmount(amount)
-      const newStatus = newPaid >= invoiceTotal - 0.005 ? 'paid' : 'partial'
-      await supabase.from('invoices')
-        .update({ status: newStatus })
-        .eq('id', inv.id).eq('org_id', orgId)
+
+      if (settleAdjust && newPaid < invoiceTotal - 0.005) {
+        // Settle in full at what was actually paid: that total becomes the
+        // invoice's (tax-inclusive) adjusted total; the original stays in
+        // invoices.total.
+        const adjusted = Math.round(newPaid * 100) / 100
+        const { error: adjErr } = await supabase.from('invoices')
+          .update({
+            status: 'paid',
+            adjusted_total: adjusted,
+            adjustment_reason: adjReason.trim() || null,
+          })
+          .eq('id', inv.id).eq('org_id', orgId)
+        if (adjErr) throw adjErr
+        setLocalAdjusted(adjusted)
+      } else {
+        const newStatus = newPaid >= invoiceTotal - 0.005 ? 'paid' : 'partial'
+        await supabase.from('invoices')
+          .update({ status: newStatus })
+          .eq('id', inv.id).eq('org_id', orgId)
+      }
 
       await fetchHistory()
       setAmount('')
       setNote('')
+      setSettleAdjust(false)
       onDone()
     } catch (err) {
       alert('Failed: ' + err.message)
@@ -474,7 +500,7 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
             <span className="balance-strip-amount">{fmt(Math.max(balance, 0))}</span>
           </div>
 
-          {isAdjusted(inv) && (
+          {(isAdjusted(inv) || localAdjusted !== null) && (
             <div style={{ fontSize: 12, color: '#64748b', marginTop: -6 }}>
               Adjusted total {fmt(invoiceTotal)} (original {fmt(inv.total)})
             </div>
@@ -542,6 +568,40 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
                   </button>
                 ))}
               </div>
+
+              {/* Adjusted payment: offered only when the amount entered is
+                  less than what's still owed. */}
+              {parseAmount(amount) > 0 && parseAmount(amount) < balance - 0.005 && (
+                <div style={{
+                  background: '#fffbeb', border: '1px solid #fde68a',
+                  borderRadius: 10, padding: '12px 14px',
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#78350f', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      style={{ marginTop: 3 }}
+                      checked={settleAdjust}
+                      onChange={e => setSettleAdjust(e.target.checked)}
+                    />
+                    <span>
+                      <strong>Accept as payment in full (adjusted payment)</strong>
+                      <br />
+                      <span style={{ fontSize: 12, color: '#92400e' }}>
+                        Adjusts the invoice total to {fmt(totalPaid + parseAmount(amount))} (tax included) and marks it Paid.
+                        The original {fmt(inv.total)} stays on record.
+                      </span>
+                    </span>
+                  </label>
+                  {settleAdjust && (
+                    <div className="inv-field2">
+                      <label>Adjustment reason (optional)</label>
+                      <input className="inv-input2" type="text" value={adjReason}
+                        onChange={e => setAdjReason(e.target.value)} />
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -550,7 +610,7 @@ function PaymentModal({ inv, orgId, onClose, onDone }) {
           {!isFullyPaid && (
             <button className="inv-btn2 inv-btn2--primary" onClick={save}
               disabled={saving || !amount || Number(amount) <= 0}>
-              {saving ? 'Saving…' : '💳 Record Payment'}
+              {saving ? 'Saving…' : settleAdjust ? '✓ Record & Mark Paid in Full' : '💳 Record Payment'}
             </button>
           )}
         </div>
