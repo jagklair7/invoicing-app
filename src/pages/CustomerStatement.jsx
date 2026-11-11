@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../app/supabaseClient'
 import { useOrg } from '../context/OrgContext'
 import { exportStatementPDF } from '../utils/exportStatementPDF'
+import { getEffectiveTotal } from '../utils/invoiceAdjustment'
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -369,6 +370,19 @@ const css = `
 const fmt     = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
 const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 
+// Money math is done in whole cents. invoices.total is double precision while
+// invoice_payments.amount is numeric, so raw subtraction can leave residue
+// like 3e-15 — which made fully-paid invoices look like they still had a
+// balance (and pick up the running balance in the Balance column).
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+const EPS = 0.005
+
+// What the customer actually owes on an invoice: the negotiated
+// adjusted_total (tax-inclusive) when present, otherwise the calculated
+// total. Same helper InvoiceView / the invoice PDF use, so the statement
+// can never disagree with the invoice itself.
+const invoiceAmount = (inv) => round2(getEffectiveTotal(inv, round2(inv.total || 0)))
+
 function firstOfMonth(offsetMonths = 0) {
   const d = new Date()
   d.setMonth(d.getMonth() + offsetMonths, 1)
@@ -391,16 +405,11 @@ export default function CustomerStatement() {
   // invoice_payments. This is the same source of truth PaymentsSection.jsx
   // uses (balanceDue = invoiceTotal - sum(invoice_payments.amount)) — the
   // statement previously trusted invoices.status === 'paid' instead, which
-  // doesn't reflect partial payments since there's no 'partial' status value.
+  // doesn't reflect partial payments.
   const [paymentsByInvoice, setPaymentsByInvoice] = useState({})
   const [loading, setLoading]     = useState(true)
-  // FIX: previously hardcoded 'Klair Computer Inc.' as both the initial
-  // state and the fallback after fetch, and fetched from a global,
-  // org-unscoped `settings` table (a leftover from before this app went
-  // multi-tenant) — so every org's statement showed Klair's own company
-  // name/address regardless of which org's customer was being viewed.
-  // Now sourced from organization_settings, scoped by activeOrg.orgId,
-  // matching how InvoiceView.jsx/send-invoice already do it.
+  // Company name/address come from organization_settings scoped by
+  // activeOrg.orgId, matching InvoiceView.jsx / send-invoice.
   const [bizName, setBizName]     = useState('')
   const [orgSettings, setOrgSettings] = useState(null)
   const [dateFrom, setDateFrom]   = useState(firstOfMonth(-2))
@@ -415,6 +424,7 @@ export default function CustomerStatement() {
     try {
       const [custRes, invRes, settingsRes] = await Promise.all([
         supabase.from('customers').select('*').eq('id', id).eq('org_id', activeOrg.orgId).single(),
+        // select('*') already includes adjusted_total — required by invoiceAmount().
         supabase.from('invoices')
           .select('*')
           .eq('customer_id', id)
@@ -447,7 +457,7 @@ export default function CustomerStatement() {
           .in('invoice_id', invoiceIds)
         if (paymentsErr) throw paymentsErr
         paidMap = (paymentsData || []).reduce((acc, p) => {
-          acc[p.invoice_id] = (acc[p.invoice_id] || 0) + Number(p.amount)
+          acc[p.invoice_id] = round2((acc[p.invoice_id] || 0) + Number(p.amount))
           return acc
         }, {})
       }
@@ -470,25 +480,27 @@ export default function CustomerStatement() {
   }
 
   // Running balance — nets out payments recorded against each invoice
-  // (invoice_payments), not just invoices whose status happens to be
-  // 'paid'. An invoice with a partial payment keeps status 'sent' (there's
-  // no 'partial' status in the DB check constraint), so relying on status
-  // alone was the source of the discrepancy.
+  // (invoice_payments) using the EFFECTIVE amount (adjusted total when one
+  // exists). Everything is rounded to cents so a fully-paid invoice is
+  // exactly 0 remaining and never contributes to the running balance.
   let runningBalance = 0
   const rows = invoices.map(inv => {
-    const amount    = Number(inv.total || 0)
-    const paid      = paymentsByInvoice[inv.id] || 0
-    const remaining = Math.max(amount - paid, 0)
-    if (remaining > 0) runningBalance += remaining
-    return { ...inv, _amount: amount, _paid: paid, _remaining: remaining, _balance: remaining > 0 ? runningBalance : null }
+    const amount    = invoiceAmount(inv)
+    const paid      = round2(paymentsByInvoice[inv.id] || 0)
+    const remaining = round2(Math.max(amount - paid, 0))
+    const isOpen    = remaining > EPS
+    if (isOpen) runningBalance = round2(runningBalance + remaining)
+    return { ...inv, _amount: amount, _paid: paid, _remaining: isOpen ? remaining : 0, _balance: isOpen ? runningBalance : null }
   })
 
-  const totalInvoiced   = invoices.reduce((s, i) => s + Number(i.total || 0), 0)
-  const totalPaid       = invoices.reduce((s, i) => s + (paymentsByInvoice[i.id] || 0), 0)
-  const totalOutstanding = totalInvoiced - totalPaid
-  const totalOverdue    = invoices
-    .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
-    .reduce((s, i) => s + Math.max(Number(i.total || 0) - (paymentsByInvoice[i.id] || 0), 0), 0)
+  const totalInvoiced    = round2(rows.reduce((s, r) => s + r._amount, 0))
+  const totalPaid        = round2(rows.reduce((s, r) => s + r._paid, 0))
+  const totalOutstanding = round2(totalInvoiced - totalPaid)
+  const totalOverdue     = round2(
+    rows
+      .filter(r => r.status === 'sent' && r.due_date && new Date(r.due_date) < today)
+      .reduce((s, r) => s + r._remaining, 0)
+  )
 
   const periodLabel = `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
 
