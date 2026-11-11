@@ -1,6 +1,7 @@
 // src/utils/exportStatementPDF.js
 import { jsPDF } from 'jspdf'
 import { supabase } from '../app/supabaseClient'
+import { getEffectiveTotal } from './invoiceAdjustment'
 
 const C = {
   slate:     [146, 201, 192],
@@ -18,6 +19,20 @@ const C = {
 
 const fmt     = (n) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0)
 const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+
+// Money math is done in whole cents. invoices.total is double precision while
+// invoice_payments.amount is numeric, so raw subtraction can leave residue
+// like 3e-15 — which made fully-paid invoices look like they still had a
+// balance. Mirrors CustomerStatement.jsx exactly so the PDF always matches
+// what's on screen.
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100
+const EPS = 0.005
+
+// What the customer actually owes on an invoice: the negotiated
+// adjusted_total (tax-inclusive) when present, otherwise the calculated
+// total. Same helper InvoiceView / the invoice PDF / the on-screen
+// statement use.
+const invoiceAmount = (inv) => round2(getEffectiveTotal(inv, round2(inv.total || 0)))
 
 function setColor(doc, rgb, type = 'text') {
   if (type === 'fill') doc.setFillColor(...rgb)
@@ -41,14 +56,12 @@ function loadImage(src) {
   })
 }
 
-// FIX: orgId param added. This used to read from a global, org-unscoped
-// `settings` table (a leftover from before this app went multi-tenant)
-// and fell back to Klair's own hardcoded name/address/phone if that
-// lookup came back empty — so every org's exported statement PDF showed
-// Klair Computer Inc.'s info regardless of whose customer it was for.
-// Now reads organization_settings scoped by org_id, matching how
-// InvoiceView.jsx / send-invoice's fetchInvoiceFull already do it, with
-// generic (non-Klair) fallbacks if a field is genuinely unset.
+// orgId param: company settings are read from organization_settings scoped
+// by org_id (matching InvoiceView.jsx / send-invoice's fetchInvoiceFull),
+// with generic (non-Klair) fallbacks if a field is genuinely unset.
+//
+// `invoices` must be full invoice rows (select '*') so adjusted_total is
+// present — CustomerStatement.jsx already passes them that way.
 export async function exportStatementPDF(customer, invoices, dateFrom, dateTo, orgId) {
   // 1. Fetch this org's company settings
   const { data: orgRow } = await supabase
@@ -164,13 +177,8 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo, o
   if (cityLine) { ry += 2; ry += wrapText(cityLine, col2x, ry, billToWidth) }
 
   // ── Payments lookup — used for BOTH the summary boxes/totals below AND
-  // the per-row running balance in the table further down. Previously
-  // this file only fetched payments for the "Paid On" date column and
-  // separately computed totalPaid/totalOutstanding/totalOverdue/running
-  // balance from invoices.status === 'paid' alone — which misses partial
-  // payments (there's no 'partial' status value), the same gap
-  // CustomerStatement.jsx's on-screen version was fixed to close. Fixed
-  // here too so the exported PDF's numbers always match what's on screen.
+  // the per-row running balance in the table further down, so the exported
+  // PDF's numbers always match what's on screen.
   const today = new Date(); today.setHours(0,0,0,0)
   const invoiceIds = invoices.map(inv => inv.id).filter(Boolean)
   const latestPaymentDates = {}
@@ -186,16 +194,30 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo, o
       if (!latestPaymentDates[row.invoice_id]) {
         latestPaymentDates[row.invoice_id] = row.payment_date
       }
-      paidByInvoice[row.invoice_id] = (paidByInvoice[row.invoice_id] || 0) + Number(row.amount || 0)
+      paidByInvoice[row.invoice_id] = round2((paidByInvoice[row.invoice_id] || 0) + Number(row.amount || 0))
     })
   }
 
-  const totalInvoiced    = invoices.reduce((s, i) => s + Number(i.total || 0), 0)
-  const totalPaid        = invoices.reduce((s, i) => s + (paidByInvoice[i.id] || 0), 0)
-  const totalOutstanding = totalInvoiced - totalPaid
-  const totalOverdue     = invoices
-    .filter(i => i.status === 'sent' && i.due_date && new Date(i.due_date) < today)
-    .reduce((s, i) => s + Math.max(Number(i.total || 0) - (paidByInvoice[i.id] || 0), 0), 0)
+  // Per-invoice figures, computed once and shared by the summary boxes,
+  // the table rows and the totals block. Amounts use the EFFECTIVE total
+  // (adjusted total when one exists); remaining is cent-rounded so a
+  // fully-paid invoice is exactly 0.
+  const calc = invoices.map(inv => {
+    const amount    = invoiceAmount(inv)
+    const paid      = round2(paidByInvoice[inv.id] || 0)
+    const rawRemain = round2(Math.max(amount - paid, 0))
+    const remaining = rawRemain > EPS ? rawRemain : 0
+    return { inv, amount, paid, remaining }
+  })
+
+  const totalInvoiced    = round2(calc.reduce((s, r) => s + r.amount, 0))
+  const totalPaid        = round2(calc.reduce((s, r) => s + r.paid, 0))
+  const totalOutstanding = round2(totalInvoiced - totalPaid)
+  const totalOverdue     = round2(
+    calc
+      .filter(r => r.inv.status === 'sent' && r.inv.due_date && new Date(r.inv.due_date) < today)
+      .reduce((s, r) => s + r.remaining, 0)
+  )
 
   // ACCOUNT SUMMARY (right col — 3 boxes)
   const boxW    = (pw - mr - col3x) / 3 - 1.5
@@ -278,17 +300,14 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo, o
     overdue: C.red,
   }
 
-  // Running balance — nets out actual payments per invoice (paidByInvoice),
-  // not just invoices whose status happens to be 'paid'. Matches
-  // CustomerStatement.jsx's on-screen calculation exactly.
+  // Running balance — nets out actual payments per invoice against the
+  // effective (adjusted) amount. Matches CustomerStatement.jsx's on-screen
+  // calculation exactly.
   let runningBalance = 0
-  invoices.forEach((inv, i) => {
-    const amount    = Number(inv.total || 0)
-    const paid      = paidByInvoice[inv.id] || 0
-    const remaining = Math.max(amount - paid, 0)
+  calc.forEach(({ inv, amount, remaining }, i) => {
     const isOverdue = inv.status === 'sent' && inv.due_date && new Date(inv.due_date) < today
     const badge = isOverdue ? 'overdue' : inv.status
-    if (remaining > 0) runningBalance += remaining
+    if (remaining > 0) runningBalance = round2(runningBalance + remaining)
 
     const bg = i % 2 === 0 ? C.white : [248, 250, 252]
     setColor(doc, bg, 'fill')
@@ -328,7 +347,7 @@ export async function exportStatementPDF(customer, invoices, dateFrom, dateTo, o
     setColor(doc, C.muted)
     doc.text(paidOn, cols.paid.x + 1, y + 5.2)
 
-    // Amount
+    // Amount (effective total — adjusted when one exists)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8)
     setColor(doc, C.text)
