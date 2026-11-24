@@ -772,7 +772,10 @@ export default function Layout({ children, session }) {
               {flags.invoices !== false && (
                 <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} onClick={() => setDrawerOpen(false)} />
               )}
-              
+              {flags.time !== false && (
+                <NavItem to="/time" label="Time" icon={<TimeIcon />} onClick={() => setDrawerOpen(false)} />
+              )}
+
               {drawerExtraNav}
             </nav>
 
@@ -843,6 +846,9 @@ export default function Layout({ children, session }) {
         )}
         {flags.invoices !== false && (
           <TabItem to="/invoices" label="Invoices" icon={<InvIcon />} />
+        )}
+        {flags.time !== false && (
+          <TabItem to="/time" label="Time" icon={<TimeIcon />} />
         )}
         <MoreTabButton active={drawerOpen} onClick={() => setDrawerOpen(true)} />
       </nav>
