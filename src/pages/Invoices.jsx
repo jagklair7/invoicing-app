@@ -7,6 +7,7 @@ import { useOrg } from '../context/OrgContext'
 import { exportInvoicePDF } from '../utils/exportInvoicePDF'
 import { hasAdjustment, getEffectiveTotal } from '../utils/invoiceAdjustment'
 import SuspendedBanner from '../components/SuspendedBanner'
+import ImportHoursModal from '../components/ImportHoursModal'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d) {
@@ -1107,13 +1108,22 @@ export default function Invoices() {
             <p className="hidden md:block text-sm text-gray-500">Manage all your invoices</p>
           </div>
           {/* Desktop "New Invoice" button — mobile uses the FAB instead */}
-          <button
-            onClick={() => navigate('/invoices/new')}
-            disabled={isSuspended}
-            className="hidden md:inline-block bg-black text-white px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            + New Invoice
-          </button>
+          <div className="hidden md:flex items-center gap-2">
+            <button
+              onClick={() => setModal({ type: 'import' })}
+              disabled={isSuspended}
+              className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-xl hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Import Hours
+            </button>
+            <button
+              onClick={() => navigate('/invoices/new')}
+              disabled={isSuspended}
+              className="bg-black text-white px-4 py-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              + New Invoice
+            </button>
+          </div>
         </div>
 
         <SuspendedBanner />
@@ -1256,6 +1266,13 @@ export default function Invoices() {
       {activeModal?.type === 'payment' && (
         <PaymentModal
           inv={activeModal.inv}
+          orgId={activeOrg.orgId}
+          onClose={() => setModal(null)}
+          onDone={fetchInvoices}
+        />
+      )}
+      {activeModal?.type === 'import' && (
+        <ImportHoursModal
           orgId={activeOrg.orgId}
           onClose={() => setModal(null)}
           onDone={fetchInvoices}
