@@ -433,6 +433,9 @@ export default function Layout({ children, session }) {
       {flags.invoices !== false && (
         <NavItem to="/recurring-invoices" label="Recurring Invoices" icon={<RecurringIcon />} onClick={() => setDrawerOpen(false)} />
       )}
+                {flags.time !== false && (
+            <NavItem to="/time" label="Time" icon={<TimeIcon />} />
+          )}
       {flags.products !== false && (
         <NavItem to="/products" label="Products" icon={<ProdIcon />} onClick={() => setDrawerOpen(false)} />
       )}
@@ -543,8 +546,8 @@ export default function Layout({ children, session }) {
             <NavItem to="/recurring-invoices" label="Recurring Invoices" icon={<RecurringIcon />} />
           )}
           {flags.time !== false && (
-            <NavItem to="/time" label="Time" icon={<TimeIcon />} />
-          )}
+          <NavItem to="/time" label="Time" icon={<TimeIcon />} onClick={() => setDrawerOpen(false)} />
+         )}
           <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
           <NavItem to="/quotes" label="Quotes" icon={<QuoteIcon />} />
           <NavItem to="/vendors" label="Vendors" icon={<VendorIcon />} />
@@ -592,9 +595,7 @@ export default function Layout({ children, session }) {
           {flags.settings !== false && (
             <NavItem to="/settings" label="Settings" icon={<SetIcon />} />
           )}
-          {flags.time !== false && (
-            <NavItem to="/time" label="Time" icon={<TimeIcon />} />
-          )}
+          
           <button
             onClick={handleLogout}
             style={{
@@ -770,6 +771,9 @@ export default function Layout({ children, session }) {
               )}
               {flags.invoices !== false && (
                 <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} onClick={() => setDrawerOpen(false)} />
+              )}
+              {flags.time !== false && (
+               <TabItem to="/time" label="Time" icon={<TimeIcon />} />
               )}
               {drawerExtraNav}
             </nav>
