@@ -51,6 +51,16 @@ function RecurringIcon() {
     </svg>
   )
 }
+
+function TimeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" opacity=".85"/>
+      <path d="M8 4.5V8l2.4 1.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity=".7"/>
+    </svg>
+  )
+}
+
 function EmpIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -272,6 +282,7 @@ function pageTitleFor(pathname) {
     ['/employees', 'Employees'],
     ['/payroll', 'Payroll'],
     ['/recurring-invoices', 'Recurring Invoices'],
+    ['/time', 'Time'],
     ['/invoices', 'Invoices'],
     ['/estimates', 'Estimates'],
     ['/quotes', 'Quotes'],
@@ -531,6 +542,9 @@ export default function Layout({ children, session }) {
           {flags.invoices !== false && (
             <NavItem to="/recurring-invoices" label="Recurring Invoices" icon={<RecurringIcon />} />
           )}
+          {flags.time !== false && (
+            <NavItem to="/time" label="Time" icon={<TimeIcon />} />
+          )}
           <NavItem to="/estimates" label="Estimates" icon={<EstIcon />} />
           <NavItem to="/quotes" label="Quotes" icon={<QuoteIcon />} />
           <NavItem to="/vendors" label="Vendors" icon={<VendorIcon />} />
@@ -577,6 +591,9 @@ export default function Layout({ children, session }) {
           {isSuperAdmin && <NavItem to="/organizations" label="Organizations" icon={<OrgIcon />} />}
           {flags.settings !== false && (
             <NavItem to="/settings" label="Settings" icon={<SetIcon />} />
+          )}
+          {flags.time !== false && (
+            <NavItem to="/time" label="Time" icon={<TimeIcon />} />
           )}
           <button
             onClick={handleLogout}

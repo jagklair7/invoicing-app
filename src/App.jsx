@@ -39,6 +39,7 @@ import QuoteForm   from "./pages/QuoteForm";
 import QuoteView   from "./pages/QuoteView";
 import QuotePublic from "./pages/QuotePublic";
 
+import TimeTracking      from './pages/TimeTracking.jsx'
 import Vendors           from './pages/Vendors.jsx'
 import PurchaseOrders    from './pages/PurchaseOrders.jsx'
 import PurchaseOrderView from './pages/PurchaseOrderView.jsx'
@@ -176,6 +177,10 @@ export default function App() {
 
               <Route path="/recurring-invoices" element={
                 <OrgGuard session={session}><RecurringInvoices /></OrgGuard>
+              } />
+
+              <Route path="/time" element={
+                <OrgGuard session={session}><TimeTracking /></OrgGuard>
               } />
 
               <Route path="/vendors" element={
