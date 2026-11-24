@@ -772,10 +772,7 @@ export default function Layout({ children, session }) {
               {flags.invoices !== false && (
                 <NavItem to="/invoices" label="Invoices" icon={<InvIcon />} onClick={() => setDrawerOpen(false)} />
               )}
-              {flags.time !== false && (
-                <NavItem to="/time" label="Time" icon={<TimeIcon />} onClick={() => setDrawerOpen(false)} />
-              )}
-
+           
               {drawerExtraNav}
             </nav>
 
