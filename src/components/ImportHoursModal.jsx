@@ -74,6 +74,40 @@ function entriesFromCSV(text) {
   })).filter(e => e.hours > 0)
 }
 
+// Stable fingerprint of one planner entry, stored on invoice_items.source_key so
+// importing the same entry twice can be detected. Notes are excluded on purpose,
+// so editing notes in the planner does not defeat the check.
+async function sourceKey(e) {
+  const raw = [e.client.toLowerCase(), e.date, e.title, e.hours.toFixed(2), e.rate.toFixed(2)].join('|')
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
+  const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+  return 'sp1:' + hex.slice(0, 24)
+}
+
+// Returns { source_key: invoice number } for entries already imported into this org.
+async function findImported(orgId, keys) {
+  const found = {}
+  for (let i = 0; i < keys.length; i += 50) {
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .select('source_key, invoice_id')
+      .eq('org_id', orgId)
+      .in('source_key', keys.slice(i, i + 50))
+    if (error) {
+      throw new Error('Duplicate check failed: ' + error.message +
+        ' (has the invoice_items.source_key SQL migration been run?)')
+    }
+    ;(data || []).forEach(r => { found[r.source_key] = r.invoice_id })
+  }
+  const ids = [...new Set(Object.values(found))]
+  if (ids.length) {
+    const { data } = await supabase.from('invoices').select('id, number').in('id', ids)
+    const num = Object.fromEntries((data || []).map(r => [r.id, r.number]))
+    Object.keys(found).forEach(k => { found[k] = num[found[k]] || 'an existing invoice' })
+  }
+  return found
+}
+
 export default function ImportHoursModal({ orgId, onClose, onDone }) {
   const navigate = useNavigate()
   const [customers, setCustomers]   = useState([])
@@ -83,6 +117,7 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
   const [mapping, setMapping]       = useState({})   // client name -> customer id
   const [included, setIncluded]     = useState({})   // client name -> bool
   const [withDates, setWithDates]   = useState(true)
+  const [includeDupes, setIncludeDupes] = useState(false)
   const [error, setError]           = useState('')
   const [saving, setSaving]         = useState(false)
 
@@ -103,10 +138,13 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
     try {
       const all = entriesFromCSV(await file.text())
       const open = all.filter(x => !x.invoiced)
+      const keyed = await Promise.all(open.map(async x => ({ ...x, key: await sourceKey(x) })))
+      const imported = await findImported(orgId, keyed.map(x => x.key))
+      const withDupes = keyed.map(x => ({ ...x, dupOf: imported[x.key] || null }))
       setSkipped(all.length - open.length)
-      setEntries(open)
+      setEntries(withDupes)
       setFileName(file.name)
-      const clients = [...new Set(open.map(x => x.client))]
+      const clients = [...new Set(withDupes.map(x => x.client))]
       const map = {}, inc = {}
       clients.forEach(c => {
         const match = customers.find(cu => cu.name.trim().toLowerCase() === c.toLowerCase())
@@ -123,13 +161,19 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
 
   const groups = Object.entries(
     entries.reduce((acc, x) => { (acc[x.client] ||= []).push(x); return acc }, {})
-  ).map(([client, items]) => ({
-    client, items,
-    hours: items.reduce((s, i) => s + i.hours, 0),
-    subtotal: items.reduce((s, i) => s + i.hours * i.rate, 0),
-  }))
+  ).map(([client, all]) => {
+    const items = includeDupes ? all : all.filter(x => !x.dupOf)
+    const dupes = all.filter(x => x.dupOf)
+    return {
+      client, items,
+      dupCount: dupes.length,
+      dupNumbers: [...new Set(dupes.map(x => x.dupOf))],
+      hours: items.reduce((s, i) => s + i.hours, 0),
+      subtotal: items.reduce((s, i) => s + i.hours * i.rate, 0),
+    }
+  })
 
-  const ready = groups.filter(g => included[g.client] && mapping[g.client])
+  const ready = groups.filter(g => included[g.client] && mapping[g.client] && g.items.length > 0)
 
   function lineName(x) {
     const head = withDates && x.date ? `${x.date} — ${x.title}` : x.title
@@ -170,6 +214,7 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
           name: lineName(x),
           quantity: Math.round(x.hours * 100) / 100,
           unit_price: x.rate,
+          source_key: x.key,
         }))
         const subtotal = items.reduce((s, i) => s + i.quantity * i.unit_price, 0)
         const taxCalc = calcInvoiceTax(subtotal, taxCfg)
@@ -202,6 +247,7 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
             name: i.name,
             quantity: i.quantity,
             unit_price: i.unit_price,
+            source_key: i.source_key,
           })))
         if (itemErr) throw itemErr
         created.push(inv)
@@ -249,6 +295,13 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
                 Put the work date at the start of each line description
               </label>
 
+              {entries.some(x => x.dupOf) && (
+                <label style={{ fontSize: 13, color: '#a16207', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="checkbox" checked={includeDupes} onChange={e => setIncludeDupes(e.target.checked)} />
+                  Include lines that were already imported (creates duplicates)
+                </label>
+              )}
+
               {groups.map(g => (
                 <div key={g.client} style={{ border: '1.5px solid #e2e8f0', borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -272,6 +325,12 @@ export default function ImportHoursModal({ orgId, onClose, onDone }) {
                     <option value="">Select customer…</option>
                     {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                  {g.dupCount > 0 && (
+                    <span style={{ fontSize: 12, color: '#a16207' }}>
+                      {g.dupCount} line{g.dupCount === 1 ? '' : 's'} already imported on {g.dupNumbers.join(', ')}
+                      {includeDupes ? ' — included anyway.' : ' — skipped.'}
+                    </span>
+                  )}
                   {!mapping[g.client] && (
                     <span style={{ fontSize: 12, color: '#a16207' }}>
                       No customer named “{g.client}” — pick one to include this client.
